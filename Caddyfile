@@ -1,0 +1,149 @@
+# SmarterOS Brain v1.0 - Caddy Configuration
+# Automatic HTTPS, reverse proxy for microservices
+
+{
+    # Email for Let's Encrypt certificate notifications
+    email zaffuto@gmail.com
+    
+    # Enable automatic HTTPS
+    auto_https on
+    
+    # Admin API disabled in production
+    admin off
+}
+
+# Main domain + www - Points to Orchestrator (API Gateway)
+smarterbot.cl, www.smarterbot.cl {
+    # Reverse proxy to Node.js Orchestrator
+    reverse_proxy localhost:3000 {
+        # Headers
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-For {remote}
+        
+        # Timeouts
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 10s
+            expect_continue_timeout 2s
+        }
+    }
+    
+    # Health check endpoint
+    handle /health {
+        reverse_proxy localhost:3000
+    }
+    
+    # Logging
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
+
+# API subdomain - Points to RoutingBrain (Fee Optimization)
+api.smarterbot.cl {
+    reverse_proxy localhost:3002 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-For {remote}
+        
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 10s
+        }
+    }
+    
+    handle /health {
+        reverse_proxy localhost:3002
+    }
+    
+    handle /routing {
+        reverse_proxy localhost:3002
+    }
+    
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
+
+# Ledger subdomain - Points to LedgerBrain (Accounting)
+ledger.smarterbot.cl {
+    reverse_proxy localhost:3003 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-For {remote}
+        
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 10s
+        }
+    }
+    
+    handle /health {
+        reverse_proxy localhost:3003
+    }
+    
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
+
+# BioStack subdomain - Points to Market Entropy Detection
+biostack.smarterbot.cl {
+    reverse_proxy localhost:3001 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-For {remote}
+        
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 10s
+        }
+    }
+    
+    handle /health {
+        reverse_proxy localhost:3001
+    }
+    
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
+
+# Monitoring - Grafana
+monitoring.smarterbot.cl {
+    reverse_proxy localhost:3100 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-For {remote}
+    }
+    
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
+
+# Neo4j Browser
+graph.smarterbot.cl {
+    reverse_proxy localhost:7474 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-For {remote}
+    }
+    
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
