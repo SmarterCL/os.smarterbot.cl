@@ -1,0 +1,221 @@
+version: '3.8'
+
+services:
+  # Orchestrator: Main task director
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    container_name: smarteros-orchestrator
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://smarteros:smarteros@postgres:5432/smarteros
+      - REDIS_URL=redis://redis:6379
+      - NEO4J_URL=neo4j://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=smarteros
+    depends_on:
+      - postgres
+      - redis
+      - neo4j
+    restart: unless-stopped
+    networks:
+      - smarteros-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # BioStack: Market entropy detection (port 3001)
+  biostack:
+    build:
+      context: .
+      dockerfile: Dockerfile.biostack
+    container_name: smarteros-biostack
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - ORCHESTRATOR_URL=http://orchestrator:3000
+    depends_on:
+      - orchestrator
+    restart: unless-stopped
+    networks:
+      - smarteros-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # RoutingBrain: Fee optimization (port 3002)
+  routing-brain:
+    build:
+      context: .
+      dockerfile: Dockerfile.routing
+    container_name: smarteros-routing-brain
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+      - ORCHESTRATOR_URL=http://orchestrator:3000
+      - DATABASE_URL=postgresql://smarteros:smarteros@postgres:5432/smarteros
+    depends_on:
+      - postgres
+      - orchestrator
+    restart: unless-stopped
+    networks:
+      - smarteros-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # LedgerBrain: Accounting validation (port 3003)
+  ledger-brain:
+    build:
+      context: .
+      dockerfile: Dockerfile.ledger
+    container_name: smarteros-ledger-brain
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://smarteros:smarteros@postgres:5432/smarteros
+      - ORCHESTRATOR_URL=http://orchestrator:3000
+    depends_on:
+      - postgres
+      - orchestrator
+    restart: unless-stopped
+    networks:
+      - smarteros-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Memory Manager: Python service for ML/embeddings
+  memory:
+    build:
+      context: .
+      dockerfile: Dockerfile.memory
+    container_name: smarteros-memory
+    ports:
+      - "5000:5000"
+    environment:
+      - PGVECTOR_URL=postgresql://smarteros:smarteros@postgres:5432/smarteros
+      - NEO4J_URL=neo4j://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=smarteros
+    depends_on:
+      - postgres
+      - neo4j
+    restart: unless-stopped
+    networks:
+      - smarteros-net
+
+  # PostgreSQL: Transactional database
+  postgres:
+    image: postgres:16-alpine
+    container_name: smarteros-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=smarteros
+      - POSTGRES_USER=smarteros
+      - POSTGRES_PASSWORD=smarteros
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    networks:
+      - smarteros-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smarteros"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Neo4j: Economic graph database
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: smarteros-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/smarteros
+      - NEO4J_PLUGINS=["apoc"]
+    volumes:
+      - neo4j_data:/var/lib/neo4j/data
+    restart: unless-stopped
+    networks:
+      - smarteros-net
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p smarteros 'RETURN 1' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis: Cache & session store
+  redis:
+    image: redis:7-alpine
+    container_name: smarteros-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - smarteros-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Monitoring: Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: smarteros-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+    networks:
+      - smarteros-net
+
+  # Monitoring: Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: smarteros-grafana
+    ports:
+      - "3100:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=smarteros
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - smarteros-net
+    depends_on:
+      - prometheus
+
+networks:
+  smarteros-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  prometheus_data:
+  grafana_data:
