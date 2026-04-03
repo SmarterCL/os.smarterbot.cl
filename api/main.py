@@ -2,6 +2,8 @@
 import os
 import json
 import logging
+import sqlite3
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -16,6 +18,9 @@ import httpx
 # Import middleware — contrato de incoherencia (obligatorio)
 from api.middleware.incoherencia import ContratoIncoherencia, EstadoValidacion
 from api.middleware.mercado import VerificadorMercado, PRECIOS_MERCADO
+
+# Import auto-action engine — cierra loop DECISIÓN → ACCIÓN → FEEDBACK
+from api.services.auto_action_engine import auto_action, get_conversion_metrics
 
 # =============================================================================
 # CONFIGURACIÓN
@@ -40,6 +45,8 @@ logger = logging.getLogger("smarter-food")
 # Event logging — JSON structured for autonomous loop
 EVENTS_LOG = Path("/var/log/smarter/events.log")
 EVENTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+
+DB_PATH = os.getenv("DB_PATH", "/var/lib/smarter/metrics.db")
 
 def log_event(event: dict):
     """Append structured event to events.log for metrics ingestion."""
@@ -407,16 +414,25 @@ async def validar_producto(payload: ValidacionRequest):
             f"INCOHERENTE: {payload.id_objeto} — "
             f"score={resultado.score_incoherencia} — {resultado.observaciones}"
         )
-        log_event({
+        event_data = {
             "type": "validation",
             "id_objeto": payload.id_objeto,
             "producto": payload.producto,
-            "status": "INCOHERENTE",
-            "score": None,
+            "status": "REJECTED",
+            "score": 0,
             "precio": payload.precio,
             "ai_mode": "contrato",
             "incoherencia_score": resultado.score_incoherencia,
-        })
+            "user_id": data.get("user_id", ""),
+        }
+        log_event(event_data)
+
+        # AUTO-ACTION: alertar fraude
+        try:
+            auto_action({**event_data, "status": "REJECTED"})
+        except Exception as e:
+            logger.error(f"auto_action failed: {e}")
+
         return ValidacionResponse(
             id_objeto=payload.id_objeto,
             producto=payload.producto,
@@ -449,6 +465,7 @@ async def validar_producto(payload: ValidacionRequest):
             "ai_mode": "pending",
             "incoherencia_score": resultado.score_incoherencia,
         })
+        # PENDIENTE → no dispara auto-action (no hay decisión)
         return ValidacionResponse(
             id_objeto=payload.id_objeto,
             producto=payload.producto,
@@ -491,16 +508,29 @@ async def validar_producto(payload: ValidacionRequest):
 
         logger.info(f"Score: {response.score}/10 para {payload.producto}")
 
-        log_event({
+        event_status = "SOSPECHOSO" if resultado.estado == EstadoValidacion.SOSPECHOSO else "VALIDADO"
+        event_data = {
             "type": "validation",
             "id_objeto": payload.id_objeto,
             "producto": payload.producto,
-            "status": "SOSPECHOSO" if resultado.estado == EstadoValidacion.SOSPECHOSO else "VALIDADO",
+            "status": event_status,
             "score": result.get("score"),
             "precio": payload.precio,
+            "referencia": data.get("precio", 0) * 0.8,  # referencia estimada
             "ai_mode": AI_MODE,
             "incoherencia_score": resultado.score_incoherencia,
-        })
+            "user_id": data.get("user_id", ""),
+        }
+        log_event(event_data)
+
+        # AUTO-ACTION: cerrar loop DECISIÓN → ACCIÓN → FEEDBACK
+        try:
+            auto_action({
+                **event_data,
+                "status": "SANDBOX" if event_status == "SOSPECHOSO" else "VALID",
+            })
+        except Exception as e:
+            logger.error(f"auto_action failed: {e}")
 
         return response
 
@@ -583,6 +613,119 @@ async def get_product(product_id: int):
         if p["id"] == product_id:
             return p
     raise HTTPException(status_code=404, detail="Product not found")
+
+
+# =============================================================================
+# AUTO-ACTION & CONVERSION METRICS
+# =============================================================================
+
+@app.get("/metrics/conversion")
+async def conversion_metrics(hours: int = 1):
+    """Métricas de conversión: acciones/eventos, response_time."""
+    return get_conversion_metrics(hours=hours)
+
+
+@app.get("/metrics/decisions")
+async def recent_decisions(limit: int = 20):
+    """Últimas decisiones automáticas (trazabilidad)."""
+    try:
+        with open(DECISIONS_LOG, "r") as f:
+            lines = f.readlines()
+        records = []
+        for line in lines[-limit:]:
+            line = line.strip()
+            if line:
+                records.append(json.loads(line))
+        return {"decisions": records, "total": len(records)}
+    except Exception:
+        return {"decisions": [], "total": 0}
+
+
+@app.post("/webhook/telegram")
+async def telegram_webhook(event: dict):
+    """
+    Webhook para que el bot Telegram envíe eventos directamente.
+    Usa esto desde el bot para convertir mensajes en eventos reales.
+
+    Payload esperado:
+    {
+        "producto": "Hamburguesa",
+        "precio": 8500,
+        "user_id": 6683244662,
+        "user_chat_id": 6683244662,
+        "raw_message": "Hamburguesa 8500"
+    }
+    """
+    producto = event.get("producto", "").strip()
+    precio = event.get("precio")
+    user_id = str(event.get("user_id", "unknown"))
+    user_chat_id = event.get("user_chat_id")
+
+    if not producto or precio is None:
+        raise HTTPException(status_code=400, detail="producto y precio requeridos")
+
+    # Enviar al validador interno
+    validation_event = {
+        "id_objeto": f"tg_{int(time.time())}",
+        "producto": producto,
+        "precio": float(precio),
+        "user_id": user_id,
+        "user_chat_id": user_chat_id,
+    }
+
+    # Evaluar con contrato de incoherencia
+    contexto = obtener_contexto()
+    resultado = contrato.evaluar(validation_event, contexto, env_ok())
+
+    # Determinar status para DB
+    if resultado.estado == EstadoValidacion.INCOHERENTE:
+        db_status = "REJECTED"
+        score = 0
+    elif resultado.estado == EstadoValidacion.SOSPECHOSO:
+        db_status = "SANDBOX"
+        score = 5.0
+    else:
+        db_status = "VALID"
+        score = 7.5
+
+    # Registrar en DB
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            "INSERT INTO events (ts, type, status, score, precio, referencia, user_id, producto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (int(time.time()), "validation", db_status, score, float(precio), float(precio) * 0.8, user_id, producto)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"DB insert failed: {e}")
+
+    # Auto-action
+    try:
+        auto_action({
+            "id_objeto": validation_event["id_objeto"],
+            "producto": producto,
+            "status": db_status,
+            "score": score,
+            "precio": float(precio),
+            "referencia": float(precio) * 0.8,
+            "user_id": user_id,
+        }, user_chat_id=user_chat_id)
+    except Exception as e:
+        logger.error(f"auto_action from webhook failed: {e}")
+
+    # Respuesta para el bot
+    return {
+        "id_objeto": validation_event["id_objeto"],
+        "producto": producto,
+        "status": db_status,
+        "score": score,
+        "recomendacion": {
+            "VALID": "✔ Buen precio",
+            "SANDBOX": "⚠ Precio sospechoso — revisar",
+            "REJECTED": "❌ Precio incoherente",
+        }.get(db_status, "❓ Estado desconocido"),
+    }
 
 
 if __name__ == "__main__":

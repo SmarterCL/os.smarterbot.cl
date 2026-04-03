@@ -1,0 +1,34 @@
+telegram:
+  bot_token: "${TELEGRAM_BOT_TOKEN}"
+  chat_id: "6683244662"
+
+services:
+  smarter-food:
+    type: systemd
+    port: 8002
+    health_url: "https://food.smarterbot.cl/health"
+  docling:
+    type: docker
+    container: smarter-docling
+    port: 8082
+    health_url: "https://docling.smarterbot.store/health"
+  caddy:
+    type: systemd
+    port: 443
+  docker:
+    type: systemd
+  n8n:
+    type: docker
+    container: n8n-server
+    port: 5678
+  odoo:
+    type: docker
+    container: odoo-deploy-odoo-1
+    port: 8069
+
+database:
+  metrics: /var/lib/smarter/metrics.db
+  events_log: /var/log/smarter/events.log
+
+api:
+  url: "http://localhost:8002"
