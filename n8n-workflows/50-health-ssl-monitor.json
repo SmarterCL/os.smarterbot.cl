@@ -1,0 +1,173 @@
+{
+  "name": "🏥 Health + SSL Security Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "webhookId": "health-monitor-trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate domain check list\nconst domains = [\n  'os.smarterbot.store',\n  'os.smarterbot.cl',\n  'bolt.smarterbot.store',\n  'bolt.smarterbot.cl',\n  'docling.smarterbot.store',\n  'bookish.smarterbot.store',\n  'emdash.smarterbot.store',\n  'food.smarterbot.cl',\n  'docs.smarterbot.cl',\n  'n8n.smarterbot.store',\n  'api.smarterbot.store',\n  'ecu.smarterbot.store'\n];\n\nreturn domains.map(domain => ({\n  json: {\n    domain,\n    url: `https://${domain}`,\n    check_ts: Math.floor(Date.now() / 1000),\n    check_id: `chk_${Date.now()}_${domain.replace(/[^a-z]/g, '')}`\n  }\n}));"
+      },
+      "name": "Generate Domain List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "method": "GET",
+        "options": {
+          "timeout": 10000,
+          "redirect": {
+            "redirect": {
+              "maxRedirects": 5
+            }
+          }
+        }
+      },
+      "name": "HTTP Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://api.ssllabs.com/api/v3/analyze",
+        "qs": {
+          "host": "={{ $json.domain }}",
+          "all": "done",
+          "ignoreMismatch": "on"
+        },
+        "method": "GET",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "SSL Check (SSL Labs)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = [];\n\nfor (const item of $input.all()) {\n  const domain = item.json.domain;\n  const checkId = item.json.check_id;\n  const ts = item.json.check_ts;\n  \n  // HTTP result\n  const httpResult = item.json.httpResult;\n  const httpStatus = httpResult?.status || 0;\n  const responseTime = httpResult?.timing?.total || 0;\n  \n  // SSL result  \n  const sslResult = item.json.sslResult;\n  const sslGrade = sslResult?.endpoints?.[0]?.grade || 'N/A';\n  const sslExpiry = sslResult?.certs?.[0]?.notAfter || '';\n  \n  // Calculate days remaining\n  let daysRemaining = 0;\n  if (sslExpiry) {\n    const expiryDate = new Date(sslExpiry);\n    const now = new Date();\n    daysRemaining = Math.max(0, Math.floor((expiryDate - now) / (1000 * 60 * 60 * 24)));\n  }\n  \n  // Determine health status\n  let healthStatus = 'healthy';\n  let severity = 'info';\n  \n  if (httpStatus === 0) {\n    healthStatus = 'down';\n    severity = 'critical';\n  } else if (httpStatus >= 500) {\n    healthStatus = 'error';\n    severity = 'critical';\n  } else if (httpStatus >= 400) {\n    healthStatus = 'warning';\n    severity = 'warning';\n  } else if (daysRemaining < 30) {\n    healthStatus = 'ssl_expiring';\n    severity = 'warning';\n  } else if (daysRemaining < 7) {\n    healthStatus = 'ssl_critical';\n    severity = 'critical';\n  } else if (['F', 'T'].includes(sslGrade)) {\n    healthStatus = 'ssl_weak';\n    severity = 'warning';\n  }\n  \n  results.push({\n    json: {\n      ts,\n      domain,\n      http_status: httpStatus,\n      ssl_grade: sslGrade,\n      ssl_expiry: sslExpiry,\n      ssl_days_remaining: daysRemaining,\n      response_time_ms: responseTime,\n      health_status: healthStatus,\n      error: httpResult?.error || null,\n      check_id: checkId,\n      severity,\n      // For BI metrics\n      bi_metric: true,\n      metric_name: 'domain_health',\n      metric_value: healthStatus === 'healthy' ? 1 : 0,\n      tags: JSON.stringify({ domain, severity, ssl_grade })\n    }\n  });\n}\n\nreturn results;"
+      },
+      "name": "Merge & Analyze",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8002/webhook/health",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "name": "Send to API (BI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 200],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "requestMethod": "POST",
+        "url": "https://api.telegram.org/bot${{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "text",
+              "value": "=🏥 *Health Alert*\n\n🌐 {{ $json.domain }}\n📊 Status: {{ $json.health_status.toUpperCase() }}\n🔢 HTTP: {{ $json.http_status }}\n🔒 SSL: {{ $json.ssl_grade }} ({{ $json.ssl_days_remaining }}d)\n⏱️  RT: {{ $json.response_time_ms }}ms\n\n⚠️ Requires attention"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 400],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.severity }}",
+              "operation": "notEqual",
+              "value2": "info"
+            }
+          ]
+        }
+      },
+      "name": "Filter: Only Alerts",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Generate Domain List", "type": "main", "index": 0 }]]
+    },
+    "Generate Domain List": {
+      "main": [[{ "node": "HTTP Check", "type": "main", "index": 0 }]]
+    },
+    "HTTP Check": {
+      "main": [[{ "node": "SSL Check (SSL Labs)", "type": "main", "index": 0 }]]
+    },
+    "SSL Check (SSL Labs)": {
+      "main": [[{ "node": "Merge & Analyze", "type": "main", "index": 0 }]]
+    },
+    "Merge & Analyze": {
+      "main": [[{ "node": "Filter: Only Alerts", "type": "main", "index": 0 }]]
+    },
+    "Filter: Only Alerts": {
+      "main": [
+        [{ "node": "Telegram Alert", "type": "main", "index": 0 }],
+        [{ "node": "Send to API (BI)", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "errorWorkflow": "health-monitor-trigger"
+  },
+  "tags": ["health", "ssl", "security", "monitoring", "bi"]
+}

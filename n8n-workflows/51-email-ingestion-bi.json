@@ -1,0 +1,177 @@
+{
+  "name": "📧 Email Ingestion → BI Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "webhookId": "email-ingestion-trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://api.mailgun.net/v3/{{ $env.MAILGUN_DOMAIN }}/events",
+        "authentication": "headerAuth",
+        "method": "GET",
+        "qs": {
+          "event": "delivered,received",
+          "limit": 50,
+          "begin": "={{ Math.floor((Date.now() - 15 * 60 * 1000) / 1000).toString() }}"
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "name": "Mailgun Events API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://api.mailgun.net/v3/{{ $env.MAILGUN_DOMAIN }}/messages",
+        "authentication": "headerAuth",
+        "method": "GET",
+        "qs": {
+          "limit": 50
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "name": "Mailgun Messages API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and categorize emails\nconst results = [];\n\n// Categories based on sender/domain/subject patterns\nconst categoryRules = {\n  'alert': ['alert', 'warning', 'critical', 'error', 'down', 'incident'],\n  'security': ['ssl', 'certificate', 'vulnerability', 'breach', 'unauthorized'],\n  'billing': ['invoice', 'payment', 'billing', 'subscription', 'receipt'],\n  'support': ['support', 'help', 'ticket', 'issue', 'bug', 'feedback'],\n  'business': ['report', 'analytics', 'kpi', 'revenue', 'conversion', 'sales'],\n  'system': ['deploy', 'restart', 'backup', 'update', 'upgrade', 'maintenance'],\n  'marketing': ['campaign', 'newsletter', 'promotion', 'discount', 'offer']\n};\n\nfunction categorizeEmail(subject, sender) {\n  const text = `${subject} ${sender}`.toLowerCase();\n  \n  for (const [category, keywords] of Object.entries(categoryRules)) {\n    if (keywords.some(kw => text.includes(kw))) {\n      return category;\n    }\n  }\n  return 'other';\n}\n\nfunction estimatePriority(category, subject) {\n  const text = subject.toLowerCase();\n  let priority = 0.5; // neutral\n  \n  // Urgent keywords increase priority\n  const urgent = ['urgent', 'critical', 'down', 'emergency', 'asap', 'immediately'];\n  if (urgent.some(kw => text.includes(kw))) priority = 0.9;\n  \n  // Category-based priority\n  if (category === 'alert') priority = Math.max(priority, 0.8);\n  if (category === 'security') priority = Math.max(priority, 0.85);\n  if (category === 'billing') priority = Math.max(priority, 0.6);\n  if (category === 'system') priority = Math.max(priority, 0.5);\n  \n  return Math.min(priority, 1.0);\n}\n\nfunction estimateSentiment(subject, body) {\n  const text = `${subject} ${body || ''}`.toLowerCase();\n  \n  const positive = ['great', 'success', 'completed', 'online', 'healthy', 'approved', 'thanks', 'excellent'];\n  const negative = ['error', 'failed', 'down', 'critical', 'warning', 'rejected', 'breach', 'issue', 'problem'];\n  \n  const posCount = positive.filter(kw => text.includes(kw)).length;\n  const negCount = negative.filter(kw => text.includes(kw)).length;\n  \n  if (negCount > posCount + 1) return 'negative';\n  if (posCount > negCount + 1) return 'positive';\n  return 'neutral';\n}\n\n// Process each email item\nfor (const item of $input.all()) {\n  const msg = item.json;\n  const subject = msg.subject || msg.headers?.subject || 'No Subject';\n  const sender = msg.sender || msg.from || 'unknown';\n  const bodyPreview = (msg.body?.plain || msg.body?.html || '').substring(0, 500);\n  const messageId = msg['message-id'] || msg['Message-Id'] || `email_${Date.now()}`;\n  \n  const category = categorizeEmail(subject, sender);\n  const priority = estimatePriority(category, subject);\n  const sentiment = estimateSentiment(subject, bodyPreview);\n  \n  results.push({\n    json: {\n      ts: Math.floor(Date.now() / 1000),\n      subject: subject,\n      sender: sender,\n      body_preview: bodyPreview.substring(0, 200),\n      category: category,\n      sentiment: sentiment,\n      priority: priority,\n      processed: 0,\n      message_id: messageId,\n      // BI metric fields\n      bi_metric: true,\n      metric_name: 'email_ingestion',\n      metric_value: priority,\n      metric_type: category,\n      source: 'mailgun',\n      tags: JSON.stringify({ sender, category, sentiment })\n    }\n  });\n}\n\nreturn results;"
+      },
+      "name": "Categorize & Score Emails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8002/webhook/email-ingestion",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "name": "Send to API (BI DB)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 200],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.priority }}",
+              "operation": "largerEqual",
+              "value2": 0.8
+            }
+          ]
+        }
+      },
+      "name": "Filter: High Priority",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "requestMethod": "POST",
+        "url": "https://api.telegram.org/bot${{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "{{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "text",
+              "value": "=📧 *Email Alert* (Priority: {{ ($json.priority * 100).toFixed(0) }}%)\n\n📋 Subject: {{ $json.subject }}\n👤 From: {{ $json.sender }}\n🏷️ Category: {{ $json.category }}\n😊 Sentiment: {{ $json.sentiment }}\n\n📝 Preview:\n{{ $json.body_preview }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Telegram High Priority",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 350],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a business intelligence analyst. Analyze this email and return a JSON with: category (one of: alert, security, billing, support, business, system, marketing), sentiment (positive/negative/neutral), priority (0-1), key_topics (array of 3 strings), action_required (boolean), summary (1 sentence).\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Subject: {{ $json.subject }}\\nFrom: {{ $json.sender }}\\nBody: {{ $json.body_preview }}\"\n    }\n  ],\n  \"response_format\": { \"type\": \"json_object\" }\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "name": "AI Email Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 550],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Mailgun Events API", "type": "main", "index": 0 }]]
+    },
+    "Mailgun Events API": {
+      "main": [[{ "node": "Mailgun Messages API", "type": "main", "index": 0 }]]
+    },
+    "Mailgun Messages API": {
+      "main": [[{ "node": "Categorize & Score Emails", "type": "main", "index": 0 }]]
+    },
+    "Categorize & Score Emails": {
+      "main": [
+        [{ "node": "Filter: High Priority", "type": "main", "index": 0 }],
+        [{ "node": "Send to API (BI DB)", "type": "main", "index": 0 }],
+        [{ "node": "AI Email Analysis", "type": "main", "index": 0 }]
+      ]
+    },
+    "Filter: High Priority": {
+      "main": [[{ "node": "Telegram High Priority", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["email", "ingestion", "bi", "ai-analysis", "monitoring"]
+}
