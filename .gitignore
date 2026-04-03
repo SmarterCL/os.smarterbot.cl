@@ -1,6 +1,14 @@
+# Secrets
+.env
+.env.*
+.env.local
+.env.production
+!.env.example
+
 # Python
 __pycache__/
-*.py[cod]
+*.pyc
+*.pyo
 *.egg-info/
 dist/
 venv/
@@ -11,7 +19,7 @@ node_modules/
 .next/
 dist/
 
-# Docker
+# Docker volumes
 postgres_data/
 redis_data/
 docling_cache/
@@ -26,11 +34,7 @@ logs/*.log
 # Data
 data/*.db
 data/*.json
-
-# Secrets
-.env
-.env.local
-.env.production
+*.db
 
 # IDE
 .vscode/
@@ -40,3 +44,9 @@ data/*.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Secrets (never commit)
+*.key
+*.pem
+*.secret
+secrets/
