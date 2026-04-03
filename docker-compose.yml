@@ -1,221 +1,254 @@
 version: '3.8'
 
+# ============================================
+# SMARTEROS v4.3 - ECOSISTEMA UNIFICADO
+# Dominio principal: os.smarterbot.store
+# ============================================
+
 services:
-  # Orchestrator: Main task director
-  orchestrator:
-    build:
-      context: .
-      dockerfile: Dockerfile.orchestrator
-    container_name: smarteros-orchestrator
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://smarteros:smarteros@postgres:5432/smarteros
-      - REDIS_URL=redis://redis:6379
-      - NEO4J_URL=neo4j://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASSWORD=smarteros
-    depends_on:
-      - postgres
-      - redis
-      - neo4j
-    restart: unless-stopped
-    networks:
-      - smarteros-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  # BioStack: Market entropy detection (port 3001)
-  biostack:
-    build:
-      context: .
-      dockerfile: Dockerfile.biostack
-    container_name: smarteros-biostack
-    ports:
-      - "3001:3001"
-    environment:
-      - NODE_ENV=production
-      - ORCHESTRATOR_URL=http://orchestrator:3000
-    depends_on:
-      - orchestrator
-    restart: unless-stopped
-    networks:
-      - smarteros-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # RoutingBrain: Fee optimization (port 3002)
-  routing-brain:
-    build:
-      context: .
-      dockerfile: Dockerfile.routing
-    container_name: smarteros-routing-brain
-    ports:
-      - "3002:3002"
-    environment:
-      - NODE_ENV=production
-      - ORCHESTRATOR_URL=http://orchestrator:3000
-      - DATABASE_URL=postgresql://smarteros:smarteros@postgres:5432/smarteros
-    depends_on:
-      - postgres
-      - orchestrator
-    restart: unless-stopped
-    networks:
-      - smarteros-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # LedgerBrain: Accounting validation (port 3003)
-  ledger-brain:
-    build:
-      context: .
-      dockerfile: Dockerfile.ledger
-    container_name: smarteros-ledger-brain
-    ports:
-      - "3003:3003"
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://smarteros:smarteros@postgres:5432/smarteros
-      - ORCHESTRATOR_URL=http://orchestrator:3000
-    depends_on:
-      - postgres
-      - orchestrator
-    restart: unless-stopped
-    networks:
-      - smarteros-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Memory Manager: Python service for ML/embeddings
-  memory:
-    build:
-      context: .
-      dockerfile: Dockerfile.memory
-    container_name: smarteros-memory
-    ports:
-      - "5000:5000"
-    environment:
-      - PGVECTOR_URL=postgresql://smarteros:smarteros@postgres:5432/smarteros
-      - NEO4J_URL=neo4j://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASSWORD=smarteros
-    depends_on:
-      - postgres
-      - neo4j
-    restart: unless-stopped
-    networks:
-      - smarteros-net
-
-  # PostgreSQL: Transactional database
+  # ------------------------------------------
+  # BASE DE DATOS
+  # ------------------------------------------
   postgres:
     image: postgres:16-alpine
-    container_name: smarteros-postgres
-    ports:
-      - "5432:5432"
+    container_name: smarter-postgres
+    restart: unless-stopped
     environment:
-      - POSTGRES_DB=smarteros
-      - POSTGRES_USER=smarteros
-      - POSTGRES_PASSWORD=smarteros
+      POSTGRES_USER: smarter
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-SmarterOS2026!}
+      POSTGRES_DB: smarter_os
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    restart: unless-stopped
+    ports:
+      - "5432:5432"
     networks:
-      - smarteros-net
+      - smarter-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U smarteros"]
+      test: ["CMD-SHELL", "pg_isready -U smarter"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Neo4j: Economic graph database
-  neo4j:
-    image: neo4j:5.15-community
-    container_name: smarteros-neo4j
-    ports:
-      - "7474:7474"
-      - "7687:7687"
-    environment:
-      - NEO4J_AUTH=neo4j/smarteros
-      - NEO4J_PLUGINS=["apoc"]
-    volumes:
-      - neo4j_data:/var/lib/neo4j/data
-    restart: unless-stopped
-    networks:
-      - smarteros-net
-    healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u neo4j -p smarteros 'RETURN 1' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Redis: Cache & session store
   redis:
     image: redis:7-alpine
-    container_name: smarteros-redis
+    container_name: smarter-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
     ports:
       - "6379:6379"
-    restart: unless-stopped
     networks:
-      - smarteros-net
+      - smarter-net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
+      retries: 5
+
+  # ------------------------------------------
+  # API — Policy Engine (FastAPI)
+  # ------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: smarter-api
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./api:/app/api
+      - ./config:/app/config
+      - /var/lib/smarter:/var/lib/smarter
+    environment:
+      - DATABASE_URL=postgresql://smarter:${DB_PASSWORD:-SmarterOS2026!}@postgres:5432/smarter_os
+      - N8N_URL=http://smarter-n8n:5678
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    ports:
+      - "8002:8002"
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8002 --reload
+    networks:
+      - smarter-net
+    depends_on:
+      - postgres
+
+  # ------------------------------------------
+  # BOLT DASHBOARD (Streamlit)
+  # ------------------------------------------
+  bolt-dashboard:
+    image: python:3.12-slim
+    container_name: smarter-bolt-dashboard
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - /var/www/bolt-dashboard:/app
+      - /var/lib/smarter:/var/lib/smarter:ro
+    environment:
+      - DATABASE_URL=postgresql://smarter:${DB_PASSWORD:-SmarterOS2026!}@postgres:5432/smarter_os
+    ports:
+      - "8501:8501"
+    command:
+      - bash
+      - -c
+      - |
+        pip install streamlit plotly pyyaml requests psycopg2-binary > /dev/null 2>&1 &&
+        streamlit run app.py --server.port=8501 --server.address=0.0.0.0 --server.headless=true
+    networks:
+      - smarter-net
+    depends_on:
+      - postgres
+
+  # ------------------------------------------
+  # N8N (Automatización)
+  # ------------------------------------------
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: smarter-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_SECURE_COOKIE=false
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=smarter_os
+      - DB_POSTGRESDB_USER=smarter
+      - DB_POSTGRESDB_PASSWORD=${DB_PASSWORD:-SmarterOS2026!}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - smarter-net
+    depends_on:
+      - postgres
+
+  # ------------------------------------------
+  # DOCLING (Parser Multimodal)
+  # ------------------------------------------
+  docling:
+    image: nginx:alpine
+    container_name: smarter-docling
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - docling_cache:/root/.cache
+    networks:
+      - smarter-net
+
+  # ------------------------------------------
+  # TELEGRAM BOT (Centro de Mando)
+  # ------------------------------------------
+  telegram-bot:
+    image: python:3.12-slim
+    container_name: smarter-telegram-bot
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - /opt/smarter-telegram-bot:/app
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/smarter:/var/lib/smarter:ro
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    command: >
+      bash -c "
+        pip install python-telegram-bot==20.7 pyyaml requests > /dev/null 2>&1 &&
+        python bot.py
+      "
+    networks:
+      - smarter-net
+    depends_on:
+      - postgres
+
+# ============================================
+# CAPA COGNITIVA (v4.3) - STANDBY
+# Activate: docker compose --profile cognitive up -d
+# ============================================
+  bookish:
+    build:
+      context: .
+      dockerfile: Dockerfile.bookish
+    container_name: smarter-bookish
+    profiles: ["cognitive"]
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./services/bookish:/app
+      - bookish_data:/app/chroma_db
+    ports:
+      - "8004:8000"
+    environment:
+      - BOOKISH_PORT=8000
+      - EMDASH_URL=http://smarter-emdash:8001
+    networks:
+      - smarter-net
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
       retries: 3
 
-  # Monitoring: Prometheus
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: smarteros-prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
+  emdash:
+    build:
+      context: .
+      dockerfile: Dockerfile.emdash
+    container_name: smarter-emdash
+    profiles: ["cognitive"]
     restart: unless-stopped
-    networks:
-      - smarteros-net
-
-  # Monitoring: Grafana
-  grafana:
-    image: grafana/grafana:latest
-    container_name: smarteros-grafana
+    working_dir: /app
+    volumes:
+      - ./services/emdash:/app
+      - emdash_data:/app/data
     ports:
-      - "3100:3000"
+      - "8005:8001"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=smarteros
-    volumes:
-      - grafana_data:/var/lib/grafana
-    restart: unless-stopped
+      - EMDASH_PORT=8001
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     networks:
-      - smarteros-net
-    depends_on:
-      - prometheus
+      - smarter-net
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-networks:
-  smarteros-net:
-    driver: bridge
-
+# ============================================
+# VOLÚMENES
+# ============================================
 volumes:
   postgres_data:
-  neo4j_data:
-  prometheus_data:
-  grafana_data:
+    driver: local
+  redis_data:
+    driver: local
+  docling_cache:
+    driver: local
+  n8n_data:
+    driver: local
+  bookish_data:
+    driver: local
+  emdash_data:
+    driver: local
+
+# ============================================
+# RED
+# ============================================
+networks:
+  smarter-net:
+    name: smarter-net
+    driver: bridge

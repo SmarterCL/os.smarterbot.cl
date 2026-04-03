@@ -1,0 +1,10 @@
+# Smarter Policy Engine — Umbrales dinámicos
+precio:
+  warn_mult: 3.0
+  reject_mult: 10.0
+sandbox:
+  penalty: 0.8
+alerts:
+  reject_rate: 0.25
+  sandbox_rate: 0.35
+  avg_score_min: 6.5
