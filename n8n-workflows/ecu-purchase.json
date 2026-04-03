@@ -1,0 +1,127 @@
+{
+  "name": "💳 ECU — Proceso de compra",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "ecu-purchase",
+        "responseMode": "lastNode"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "ecu-purchase-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.product }}",
+              "operation": "notEmpty"
+            }
+          ]
+        }
+      },
+      "name": "Validate Product",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "content": "={{ `✅ *Orden de compra creada*\\n\\n📦 Servicio: ${$json.body.product}\\n💰 Precio: ${$json.body.price || 'Consultar'}\\n👤 Cliente: ${$json.body.user_id || 'unknown'}\\n\\n📋 Siguientes pasos:\\n1️⃣ Sube tu archivo .bin/.orig\\n2️⃣ Realiza el pago\\n3️⃣ Recibe tu archivo en 24h` }}",
+        "jsonOutput": true
+      },
+      "name": "Create Order",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "requestMethod": "POST",
+        "url": "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "6683244662"
+            },
+            {
+              "name": "text",
+              "value": "={{ `💳 *NUEVA COMPRA*\\n\\n📦 ${$json.body.product}\\n💰 ${$json.body.price || 'Consultar'}\\n👤 ${$json.body.user_id || 'unknown'}\\n\\n⏳ Esperando archivo y pago` }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Notify Purchase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 200]
+    },
+    {
+      "parameters": {
+        "response": {
+          "response": "={{ { status: 'ok', message: 'Orden creada', next_steps: ['upload_file', 'payment'] } }}"
+        }
+      },
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1080, 200]
+    },
+    {
+      "parameters": {
+        "content": "Productos disponibles: Stage 1, DPF OFF, EGR OFF",
+        "jsonOutput": true
+      },
+      "name": "Response Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "response": {
+          "response": "={{ { status: 'error', message: 'Producto no válido. Opciones: Stage 1 ($150), DPF OFF ($120), EGR OFF ($100)' } }}"
+        }
+      },
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1080, 400]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Validate Product", "type": "main", "index": 0 }]]
+    },
+    "Validate Product": {
+      "main": [
+        [{ "node": "Create Order", "type": "main", "index": 0 }],
+        [{ "node": "Response Error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Order": {
+      "main": [[{ "node": "Notify Purchase", "type": "main", "index": 0 }]]
+    },
+    "Notify Purchase": {
+      "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]]
+    },
+    "Response Error": {
+      "main": [[{ "node": "Respond Error", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["ecu-tuning", "purchase"]
+}

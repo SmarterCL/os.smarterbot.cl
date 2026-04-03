@@ -1,0 +1,450 @@
+{
+  "name": "Chatwoot WhatsApp → SmarterOS Complete",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "chatwoot-in",
+        "options": {},
+        "responseMode": "onReceived",
+        "responseCode": 200
+      },
+      "id": "webhook-chatwoot-in",
+      "name": "Webhook Chatwoot",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "chatwoot-smarteros"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Normalizar datos de Chatwoot\nconst event = $json.event;\nconst content = ($json.content || '').toLowerCase().trim();\nconst phone = $json.sender?.phone_number || '';\nconst name = $json.sender?.name || 'Usuario';\nconst conversationId = $json.conversation?.id;\nconst messageType = $json.message_type;\n\n// Solo procesar mensajes entrantes\nif (messageType !== 'incoming') {\n  return null;\n}\n\nreturn {\n  event,\n  content,\n  phone,\n  name,\n  conversationId,\n  timestamp: new Date().toISOString(),\n  raw: $json\n};"
+      },
+      "id": "normalize-data",
+      "name": "Normalizar Datos",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Detectar intención del usuario\nconst content = $json.content;\n\n// OTP: código de 6 dígitos\nif (/^\\d{6}$/.test(content)) {\n  return { intent: 'otp_validation', otp: content };\n}\n\n// Demo / Prueba\nif (content.match(/demo|prueba|ver|mostrar|conocer/)) {\n  return { intent: 'demo' };\n}\n\n// Agenda / Llamada\nif (content.match(/agenda|llamada|reunion|cita|hablar/)) {\n  return { intent: 'agenda' };\n}\n\n// Precio\nif (content.match(/precio|costo|cuanto|tarifa|plan/)) {\n  return { intent: 'precio' };\n}\n\n// Urgente\nif (content.match(/urgente|ahora|inmediato|ya/)) {\n  return { intent: 'urgente' };\n}\n\n// Ayuda / Info\nif (content.match(/ayuda|info|informacion|funciona/)) {\n  return { intent: 'ayuda' };\n}\n\n// Saludo inicial\nif (content.match(/hola|buenos|buenas|hi|hello/)) {\n  return { intent: 'welcome' };\n}\n\n// Default\nreturn { intent: 'unknown' };"
+      },
+      "id": "detect-intent",
+      "name": "Detectar Intención",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.intent}}",
+                    "value2": "demo"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "demo"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.intent}}",
+                    "value2": "otp_validation"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "otp"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.intent}}",
+                    "value2": "agenda"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "agenda"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.intent}}",
+                    "value2": "precio"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "precio"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.intent}}",
+                    "value2": "welcome"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "welcome"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "switch-intent",
+      "name": "Switch Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generar OTP de 6 dígitos\nconst otp = Math.floor(100000 + Math.random() * 900000).toString();\nconst expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();\n\nreturn {\n  otp,\n  phone: $input.first().json.phone,\n  expiresAt,\n  used: false\n};"
+      },
+      "id": "generate-otp",
+      "name": "Generar OTP",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 100]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "otp_codes",
+        "columns": "phone, otp, expires_at, used",
+        "additionalFields": {}
+      },
+      "id": "save-otp-supabase",
+      "name": "Guardar OTP (Supabase)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1250, 100],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-pg",
+          "name": "Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validar OTP\nconst inputOtp = $input.first().json.otp;\nconst phone = $input.first().json.phone;\n\n// Buscar en Supabase (simulado aquí, usar nodo Postgres)\nconst query = `SELECT * FROM otp_codes WHERE phone='${phone}' AND otp='${inputOtp}' AND used=false AND expires_at > NOW() LIMIT 1`;\n\nreturn {\n  query,\n  phone,\n  otp: inputOtp\n};"
+      },
+      "id": "validate-otp",
+      "name": "Validar OTP",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{$json.query}}",
+        "options": {}
+      },
+      "id": "check-otp-db",
+      "name": "Verificar OTP en DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1250, 200],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-pg",
+          "name": "Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generar JWT para acceso\nconst jwt = require('jsonwebtoken');\nconst phone = $input.first().json.phone;\nconst secret = process.env.JWT_SECRET || 'smarteros-secret';\n\nconst token = jwt.sign(\n  {\n    phone,\n    tenant: 'smarter-demo',\n    type: 'otp_validated',\n    exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60)\n  },\n  secret\n);\n\nreturn {\n  token,\n  phone,\n  accessUrl: `https://flow.smarterbot.cl/t/smarter-demo?token=${token}`\n};"
+      },
+      "id": "generate-jwt",
+      "name": "Generar JWT",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Crear evento en calendario\nconst name = $input.first().json.name;\nconst phone = $input.first().json.phone;\nconst datetime = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();\n\nreturn {\n  name,\n  phone,\n  datetime,\n  type: 'demo',\n  duration: 30,\n  meetLink: 'https://meet.google.com/xxx-xxxx-xxx'\n};"
+      },
+      "id": "create-calendar-event",
+      "name": "Crear Evento Calendario",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Contacto con ejecutivo para precio\nconst name = $input.first().json.name;\nconst phone = $input.first().json.phone;\n\nreturn {\n  name,\n  phone,\n  intent: 'precio',\n  priority: 'high',\n  message: `Cliente interesado en precios: ${name} (${phone})`\n};"
+      },
+      "id": "contact-sales",
+      "name": "Contactar Ventas",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Mensaje de bienvenida\nreturn {\n  message: '¡Hola! 👋 Soy el asistente automático de SmarterOS.\\n\\n¿En qué te puedo ayudar?\\n\\n• Escribe \"demo\" para probar el sistema\\n• Escribe \"agenda\" para agendar una llamada\\n• Escribe \"precio\" para hablar con ventas'\n};"
+      },
+      "id": "welcome-message",
+      "name": "Mensaje Bienvenida",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Construir respuesta según flujo\nconst intent = $input.first().json.intent;\nlet message = '';\n\nif (intent === 'demo' && $json.otp) {\n  message = `Tu código de acceso es: *${$json.otp}*\\n\\nVálido por 10 minutos. Responde con este código para continuar.`;\n}\nelse if (intent === 'otp_validation' && $json.token) {\n  message = `✅ Código validado correctamente.\\n\\nAccede a tu demo aquí:\\n${$json.accessUrl}`;\n}\nelse if (intent === 'agenda' && $json.meetLink) {\n  message = `✅ Llamada agendada para mañana.\\n\\nLink de reunión:\\n${$json.meetLink}`;\n}\nelse if (intent === 'precio') {\n  message = 'Te contacto con un ejecutivo ahora mismo para darte información de precios. 📞';\n}\nelse if (intent === 'welcome') {\n  message = $json.message;\n}\nelse {\n  message = 'No entendí tu mensaje. ¿Podrías reformularlo?';\n}\n\nreturn {\n  conversationId: $input.first().json.conversationId,\n  message,\n  intent\n};"
+      },
+      "id": "build-response",
+      "name": "Construir Respuesta",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1250, 350]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://chatwoot.smarterbot.cl/api/v1/accounts/1/conversations/{{$json.conversationId}}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{$credentials.chatwootApiToken}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{$json.message}}"
+            },
+            {
+              "name": "message_type",
+              "value": "outgoing"
+            },
+            {
+              "name": "private",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-chatwoot-message",
+      "name": "Enviar Mensaje Chatwoot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1450, 350]
+    }
+  ],
+  "connections": {
+    "Webhook Chatwoot": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Datos": {
+      "main": [
+        [
+          {
+            "node": "Detectar Intención",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detectar Intención": {
+      "main": [
+        [
+          {
+            "node": "Switch Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Intent": {
+      "main": [
+        [
+          {
+            "node": "Generar OTP",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validar OTP",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Crear Evento Calendario",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Contactar Ventas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mensaje Bienvenida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar OTP": {
+      "main": [
+        [
+          {
+            "node": "Guardar OTP (Supabase)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar OTP (Supabase)": {
+      "main": [
+        [
+          {
+            "node": "Construir Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar OTP": {
+      "main": [
+        [
+          {
+            "node": "Verificar OTP en DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar OTP en DB": {
+      "main": [
+        [
+          {
+            "node": "Generar JWT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar JWT": {
+      "main": [
+        [
+          {
+            "node": "Construir Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear Evento Calendario": {
+      "main": [
+        [
+          {
+            "node": "Construir Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contactar Ventas": {
+      "main": [
+        [
+          {
+            "node": "Construir Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensaje Bienvenida": {
+      "main": [
+        [
+          {
+            "node": "Construir Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construir Respuesta": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensaje Chatwoot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [
+    {
+      "name": "WhatsApp",
+      "id": "1"
+    },
+    {
+      "name": "Chatwoot",
+      "id": "2"
+    },
+    {
+      "name": "SmarterOS",
+      "id": "3"
+    }
+  ]
+}

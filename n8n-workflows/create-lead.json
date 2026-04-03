@@ -1,0 +1,277 @@
+{
+  "name": "SmarterOS - Create Lead",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "create-lead",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"body\"][\"email\"]}}",
+              "operation": "contains",
+              "value2": "@"
+            }
+          ]
+        }
+      },
+      "id": "validate-email-node",
+      "name": "Validate Email",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUPABASE_URL}}/rest/v1/leads",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": {
+          "headers": [
+            {
+              "name": "apikey",
+              "value": "={{$env.SUPABASE_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.SUPABASE_KEY}}"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "lead_id",
+              "value": "={{$json[\"body\"][\"lead_id\"]}}"
+            },
+            {
+              "name": "name",
+              "value": "={{$json[\"body\"][\"name\"]}}"
+            },
+            {
+              "name": "email",
+              "value": "={{$json[\"body\"][\"email\"]}}"
+            },
+            {
+              "name": "phone",
+              "value": "={{$json[\"body\"][\"phone\"]}}"
+            },
+            {
+              "name": "company",
+              "value": "={{$json[\"body\"][\"company\"]}}"
+            },
+            {
+              "name": "source",
+              "value": "={{$json[\"body\"][\"source\"]}}"
+            },
+            {
+              "name": "interest",
+              "value": "={{$json[\"body\"][\"interest\"]}}"
+            },
+            {
+              "name": "status",
+              "value": "new"
+            },
+            {
+              "name": "created_at",
+              "value": "={{new Date().toISOString()}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "supabase-insert-node",
+      "name": "Create in Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{$env.TELEGRAM_CHAT_ID}}"
+            },
+            {
+              "name": "text",
+              "value": "🆕 *Nuevo Lead*\n\nNombre: {{$json[\"body\"][\"name\"]}}\nEmail: {{$json[\"body\"][\"email\"]}}\nEmpresa: {{$json[\"body\"][\"company\"] || 'N/A'}}\nFuente: {{$json[\"body\"][\"source\"]}}\nInterés: {{$json[\"body\"][\"interest\"] || 'General'}}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "telegram-notify-node",
+      "name": "Telegram Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.sendgrid.com/v3/mail/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "personalizations",
+              "value": "=[{\"to\": [{\"email\": \"{{$json[\"body\"][\"email\"]}}\", \"name\": \"{{$json[\"body\"][\"name\"]}}\"}]}]"
+            },
+            {
+              "name": "from",
+              "value": "{\"email\": \"noreply@smarterbot.cl\", \"name\": \"SmarterOS\"}"
+            },
+            {
+              "name": "subject",
+              "value": "¡Gracias por tu interés!"
+            },
+            {
+              "name": "content",
+              "value": "=[{\"type\": \"text/plain\", \"value\": \"Hola {{$json[\"body\"][\"name\"]}},\\n\\nGracias por tu interés en SmarterOS. Nos pondremos en contacto pronto.\\n\\nEquipo SmarterOS\"}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "welcome-email-node",
+      "name": "Send Welcome Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Lead created successfully\",\n  \"data\": {\n    \"lead_id\": \"={{$json[\"body\"][\"lead_id\"]}}\",\n    \"name\": \"={{$json[\"body\"][\"name\"]}}\",\n    \"email\": \"={{$json[\"body\"][\"email\"]}}\",\n    \"status\": \"new\"\n  }\n}",
+        "options": {}
+      },
+      "id": "response-node",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"message\": \"Invalid email format\"\n}",
+        "options": {}
+      },
+      "id": "error-response-node",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 400]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Email": {
+      "main": [
+        [
+          {
+            "node": "Create in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create in Supabase": {
+      "main": [
+        [
+          {
+            "node": "Telegram Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Notify": {
+      "main": [
+        [
+          {
+            "node": "Send Welcome Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Welcome Email": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "smarteros"
+    },
+    {
+      "name": "chatops"
+    },
+    {
+      "name": "crm"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-03-29T20:30:00.000Z",
+  "versionId": "1"
+}

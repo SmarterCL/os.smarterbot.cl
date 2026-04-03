@@ -1,0 +1,79 @@
+{
+  "name": "Telegram Bot - Echo (Simple)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"]
+      },
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-7631713367",
+          "name": "SmarterChat Bot",
+          "token": "${TELEGRAM_BOT_TOKEN}"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json[\"message\"][\"chat\"][\"id\"]}}",
+        "text": "🤖 SmarterBOT recibió tu mensaje:\n\n\"{{$json[\"message\"][\"text\"]}}\"\n\n✅ Bot funcionando correctamente!",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-echo-reply",
+      "name": "Telegram - Send Echo Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [450, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-7631713367",
+          "name": "SmarterChat Bot",
+          "token": "${TELEGRAM_BOT_TOKEN}"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "# 🤖 Telegram Echo Bot\n\nSetup mínimo para test:\n1. Importar workflow\n2. Activar\n3. Enviar mensaje al bot\n\nRespuesta: eco del mensaje",
+        "height": 200,
+        "width": 300,
+        "color": 4
+      },
+      "id": "info-note",
+      "name": "Info",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [50, 250]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Send Echo Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "America/Santiago",
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "save",
+    "saveDataSuccessExecution": "save",
+    "saveManualExecutions": true
+  },
+  "staticData": null,
+  "pinData": {},
+  "triggerCount": 1
+}

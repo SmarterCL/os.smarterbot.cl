@@ -1,0 +1,172 @@
+{
+  "name": "mkt-flow-email-capture-classification",
+  "tenant_id": "mkt-smarterbot-cl",
+  "tenant_url": "https://mkt.smarterbot.cl",
+  "visible_url": "https://mkt.smarterbot.cl/dashboard/flows/email-capture",
+  "description": "Captura bandejas de correo, clasifica y delega a archivo/respuesta/clientes",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "interval": 15
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Cron Trigger (15min)",
+      "type": "n8n-nodes-base.schedule",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// CONFIGURACIÓN TENANT\n// ============================================\n\nconst tenant = {\n  id: \"mkt-smarterbot-cl\",\n  name: \"Marketing SmarterBot\",\n  url: \"https://mkt.smarterbot.cl\",\n  flow_url: \"https://mkt.smarterbot.cl/dashboard/flows/email-capture\"\n};\n\nreturn {\n  json: {\n    tenant: tenant,\n    timestamp: new Date().toISOString(),\n    flow_name: \"mkt-flow-email-capture-classification\"\n  }\n};"
+      },
+      "id": "set-tenant-info",
+      "name": "Set Tenant Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "operation": "execute",
+        "command": "python3 /root/smarteros-runtime/scripts/email-capture.py 50",
+        "options": {}
+      },
+      "id": "execute-email-capture",
+      "name": "Execute Email Capture Script",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://rjfcmmzjlguiititkmyh.supabase.co/rest/v1/email_captures",
+        "sendHeaders": {
+          "apikey": "${SUPABASE_SERVICE_KEY}",
+          "Authorization": "Bearer ${SUPABASE_SERVICE_KEY}",
+          "Content-Type": "application/json",
+          "Prefer": "return=representation"
+        },
+        "body": "={\"tenant_id\":\"{{$json.tenant.id}}\",\"tenant_url\":\"{{$json.tenant.url}}\",\"flow_name\":\"{{$json.flow_name}}\",\"captured_at\":\"{{$json.timestamp}}\"}",
+        "options": {}
+      },
+      "id": "save-to-supabase",
+      "name": "Save to Supabase (Tenant Log)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\n  \"chat_id\": \"{{TELEGRAM_CHAT_ID}}\",\n  \"text\": \"📧 Email Capture Ejecutado\\n\\n🏢 Tenant: {{$json.tenant.name}}\\n🔗 URL: {{$json.tenant.url}}\\n📊 Flow: {{$json.flow_name}}\\n⏰ Hora: {{$json.timestamp}}\\n\\n✅ Ver dashboard: {{$json.tenant.url}}/dashboard/flows/email-capture\",\n  \"parse_mode\": \"Markdown\"\n}",
+        "options": {}
+      },
+      "id": "notify-telegram",
+      "name": "Notify Telegram (Tenant Update)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"tenant_id\": \"{{$json.tenant.id}}\",\n  \"tenant_url\": \"{{$json.tenant.url}}\",\n  \"flow_name\": \"{{$json.flow_name}}\",\n  \"message\": \"Email capture executed successfully\"\n}",
+        "options": {}
+      },
+      "id": "response-webhook",
+      "name": "Response (API)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1200, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Cron Trigger (15min)": {
+      "main": [
+        [
+          {
+            "node": "Set Tenant Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Tenant Info": {
+      "main": [
+        [
+          {
+            "node": "Execute Email Capture Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Email Capture Script": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase (Tenant Log)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Supabase (Tenant Log)": {
+      "main": [
+        [
+          {
+            "node": "Notify Telegram (Tenant Update)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Telegram (Tenant Update)": {
+      "main": [
+        [
+          {
+            "node": "Response (API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "mkt-flow-email-capture-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "mkt-smarterbot-cl"
+    },
+    {
+      "name": "email-capture"
+    },
+    {
+      "name": "tenant-flow"
+    }
+  ]
+}

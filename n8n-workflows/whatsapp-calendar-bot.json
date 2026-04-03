@@ -1,0 +1,134 @@
+{
+  "name": "WhatsApp Calendar Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "whatsapp-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "smarteros-whatsapp"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst message = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\n\nif (!message) {\n  return { json: { error: 'No message found' } };\n}\n\nconst phone = message.from;\nconst text = message.text?.body?.toLowerCase() || '';\nconst name = body.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.profile?.name || 'Usuario';\n\nreturn {\n  json: {\n    phone,\n    name,\n    text,\n    messageId: message.id,\n    timestamp: message.timestamp\n  }\n};"
+      },
+      "name": "Parse WhatsApp Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.text}}",
+              "operation": "contains",
+              "value2": "demo"
+            }
+          ]
+        }
+      },
+      "name": "Check Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "calendarId": "primary",
+        "startDate": "={{DateTime.now().toISO()}}",
+        "endDate": "={{DateTime.now().plus({days: 7}).toISO()}}",
+        "timeMin": "={{DateTime.now().toISO()}}",
+        "options": {
+          "maxResults": 10,
+          "singleEvents": true,
+          "orderBy": "startTime"
+        }
+      },
+      "name": "Get Available Slots",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 2,
+      "position": [850, 200],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "1",
+          "name": "Google Calendar OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const events = $input.all().map(i => i.json);\nconst now = DateTime.now();\n\n// Horario laboral: Lun-Vie 9-18hrs\nconst workHours = [];\nfor (let day = 0; day < 7; day++) {\n  const date = now.plus({days: day});\n  if (date.weekday >= 1 && date.weekday <= 5) {\n    for (let hour = 9; hour < 18; hour++) {\n      const slot = date.set({hour, minute: 0, second: 0});\n      const slotEnd = slot.plus({hours: 1});\n      \n      // Check if slot is free\n      const isBusy = events.some(e => {\n        const start = DateTime.fromISO(e.start?.dateTime || e.start?.date);\n        const end = DateTime.fromISO(e.end?.dateTime || e.end?.date);\n        return slot >= start && slot < end;\n      });\n      \n      if (!isBusy && slot > now) {\n        workHours.push({\n          datetime: slot.toISO(),\n          formatted: slot.toFormat('dd/MM HH:mm'),\n          day: slot.toFormat('EEEE', {locale: 'es'})\n        });\n      }\n    }\n  }\n}\n\nreturn {\n  json: {\n    availableSlots: workHours.slice(0, 5),\n    phone: $('Parse WhatsApp Message').first().json.phone,\n    name: $('Parse WhatsApp Message').first().json.name\n  }\n};"
+      },
+      "name": "Calculate Free Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.phone}}",
+        "text": "¡Hola {{$json.name}}! 👋\n\n📅 *Horarios disponibles para demo:*\n\n{{$json.availableSlots.map((s, i) => `${i+1}. ${s.day} ${s.formatted}hrs`).join('\\n')}}\n\n💬 Responde con el número de tu preferencia (1-5)",
+        "additionalFields": {}
+      },
+      "name": "Send Available Slots",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [1250, 200],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "3",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"success\": true, \"message\": \"Processed\"} }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [[{"node": "Parse WhatsApp Message", "type": "main", "index": 0}]]
+    },
+    "Parse WhatsApp Message": {
+      "main": [[{"node": "Check Intent", "type": "main", "index": 0}]]
+    },
+    "Check Intent": {
+      "main": [[{"node": "Get Available Slots", "type": "main", "index": 0}]]
+    },
+    "Get Available Slots": {
+      "main": [[{"node": "Calculate Free Slots", "type": "main", "index": 0}]]
+    },
+    "Calculate Free Slots": {
+      "main": [[{"node": "Send Available Slots", "type": "main", "index": 0}]]
+    },
+    "Send Available Slots": {
+      "main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["whatsapp", "calendar", "bot"],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-30T17:05:00.000Z",
+  "versionId": "1"
+}

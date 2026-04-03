@@ -1,0 +1,282 @@
+{
+  "name": "SmarterOS v2 - Action Execution Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "action/execute",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-execute",
+      "name": "Webhook Ejecutar Acción",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "action-execute"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// VALIDAR TRANSICIÓN DE ESTADO\n// ============================================\n\nconst input = $input.item.json;\nconst action_id = input.action_id;\n\n// Validar que action_id exista\nif (!action_id) {\n  throw new Error('action_id es requerido');\n}\n\n// Retornar para siguiente paso\nreturn { json: { action_id, executor: input.executor || 'n8n' } };"
+      },
+      "id": "validate-transition",
+      "name": "Validar Transición",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.PICOLAW_URL || 'http://localhost:18790' }}/api/v1/hardware/status",
+        "options": {}
+      },
+      "id": "check-hardware",
+      "name": "Verificar Hardware",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.connected }}",
+              "operation": "equal",
+              "value2": true
+            },
+            {
+              "value1": "={{ $json.ready }}",
+              "operation": "equal",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-hardware-ready",
+      "name": "¿Hardware listo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "action_contracts",
+        "columns": "status,updated_at",
+        "filterType": "string",
+        "filterString": "action_id=eq.{{ $json.action_id }}"
+      },
+      "id": "update-to-executing",
+      "name": "Actualizar a Executing",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "SmarterOS Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PICOLAW_URL || 'http://localhost:18790' }}/api/v1/action/grab",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "={{ JSON.stringify({ action_id: $json.action_id, command: 'grab', params: $json.params || {}, timeout: $json.timeout || 120 }) }}",
+        "options": {}
+      },
+      "id": "call-driver",
+      "name": "Llamar Driver API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_states",
+        "columns": "action_id,status,started_at,executor,timeout_seconds",
+        "returnFields": "id"
+      },
+      "id": "insert-executing-state",
+      "name": "Registrar Estado Executing",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1450, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "SmarterOS Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_lifecycle_logs",
+        "columns": "action_id,from_status,to_status,triggered_by,message",
+        "returnFields": "id"
+      },
+      "id": "log-executing",
+      "name": "Registrar Lifecycle Executing",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1650, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "SmarterOS Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"action_id\": \"={{ $json.action_id }}\",\n  \"status\": \"executing\",\n  \"message\": \"Acción iniciada - esperando confirmación del hardware\"\n}",
+        "options": {}
+      },
+      "id": "response-executing",
+      "name": "Responder Executing",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"error\": \"hardware_not_ready\",\n  \"message\": \"Hardware no está conectado o listo\"\n}",
+        "options": {}
+      },
+      "id": "response-hardware-error",
+      "name": "Responder Error Hardware",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Ejecutar Acción": {
+      "main": [
+        [
+          {
+            "node": "Validar Transición",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Transición": {
+      "main": [
+        [
+          {
+            "node": "Verificar Hardware",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Hardware": {
+      "main": [
+        [
+          {
+            "node": "¿Hardware listo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hardware listo?": {
+      "main": [
+        [
+          {
+            "node": "Actualizar a Executing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder Error Hardware",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar a Executing": {
+      "main": [
+        [
+          {
+            "node": "Llamar Driver API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Llamar Driver API": {
+      "main": [
+        [
+          {
+            "node": "Registrar Estado Executing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Estado Executing": {
+      "main": [
+        [
+          {
+            "node": "Registrar Lifecycle Executing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Lifecycle Executing": {
+      "main": [
+        [
+          {
+            "node": "Responder Executing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "action-execution-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "smarteros-v2"
+    },
+    {
+      "name": "execution"
+    },
+    {
+      "name": "driver"
+    }
+  ]
+}

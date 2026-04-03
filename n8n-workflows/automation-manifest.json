@@ -1,0 +1,126 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2025-11-28T09:00:00Z",
+  "categories": {
+    "odoo": {
+      "name": "Odoo ERP",
+      "description": "Automatizaciones para Odoo ERP",
+      "icon": "🏪",
+      "color": "#875A7B"
+    },
+    "shopify": {
+      "name": "Shopify",
+      "description": "Integraciones con tiendas Shopify",
+      "icon": "🛒",
+      "color": "#96BF48"
+    },
+    "chatwoot": {
+      "name": "Chatwoot CRM",
+      "description": "Integraciones con Chatwoot",
+      "icon": "💬",
+      "color": "#1F93FF"
+    },
+    "marketing": {
+      "name": "Marketing",
+      "description": "Campañas y automatizaciones de marketing",
+      "icon": "📢",
+      "color": "#FF6B6B"
+    },
+    "whatsapp": {
+      "name": "WhatsApp",
+      "description": "Automatizaciones de WhatsApp Business",
+      "icon": "💬",
+      "color": "#25D366"
+    },
+    "crm": {
+      "name": "CRM",
+      "description": "Gestión de clientes y relaciones",
+      "icon": "👥",
+      "color": "#4A90E2"
+    },
+    "pdf": {
+      "name": "PDF",
+      "description": "Generación y procesamiento de PDFs",
+      "icon": "📄",
+      "color": "#E74C3C"
+    },
+    "backup": {
+      "name": "Backup",
+      "description": "Respaldos y sincronización",
+      "icon": "💾",
+      "color": "#95A5A6"
+    }
+  },
+  "workflows": [
+    {
+      "id": "chatwoot-basic",
+      "name": "Chatwoot Basic Sync",
+      "category": "chatwoot",
+      "description": "Sincronización básica de contactos y conversaciones desde Chatwoot",
+      "path": "templates/chatwoot-basic.json",
+      "tags": ["chatwoot", "crm", "sync"],
+      "active": true,
+      "webhook": "/webhook/chatwoot-sync"
+    },
+    {
+      "id": "odoo-sync-inventory",
+      "name": "Sincronizar Inventario Odoo",
+      "category": "odoo",
+      "description": "Sincronización automática de inventario entre Odoo y Shopify",
+      "path": "odoo/sync-inventory.json",
+      "tags": ["odoo", "shopify", "sync", "inventory"],
+      "active": true,
+      "schedule": "0 */6 * * *",
+      "webhook": "/webhook/odoo-sync-inventory"
+    },
+    {
+      "id": "odoo-sync-products",
+      "name": "Sincronizar Productos Odoo",
+      "category": "odoo",
+      "description": "Actualiza catálogo de productos desde Odoo a Shopify",
+      "path": "odoo/sync-products.json",
+      "tags": ["odoo", "shopify", "products"],
+      "active": true,
+      "schedule": "0 2 * * *",
+      "webhook": "/webhook/odoo-sync-products"
+    },
+    {
+      "id": "odoo-sync-orders",
+      "name": "Importar Pedidos desde Shopify",
+      "category": "odoo",
+      "description": "Importa pedidos de Shopify a Odoo automáticamente",
+      "path": "odoo/sync-orders.json",
+      "tags": ["odoo", "shopify", "orders"],
+      "active": true,
+      "schedule": "*/15 * * * *",
+      "webhook": "/webhook/odoo-sync-orders"
+    },
+    {
+      "id": "shopify-abandoned-cart",
+      "name": "Recuperar Carritos Abandonados",
+      "category": "shopify",
+      "description": "Envía emails automáticos para recuperar ventas perdidas",
+      "path": "shopify/abandoned-cart.json",
+      "tags": ["shopify", "marketing", "email"],
+      "active": true,
+      "schedule": "0 */2 * * *",
+      "webhook": "/webhook/shopify-abandoned-cart"
+    },
+    {
+      "id": "whatsapp-leads-crm",
+      "name": "WhatsApp Leads → CRM",
+      "category": "whatsapp",
+      "description": "Captura mensajes de WhatsApp y crea leads en el CRM",
+      "path": "whatsapp/leads-to-crm.json",
+      "tags": ["whatsapp", "crm", "leads"],
+      "active": true,
+      "webhook": "/webhook/whatsapp-leads"
+    }
+  ],
+  "stats": {
+    "totalWorkflows": 6,
+    "activeWorkflows": 6,
+    "categories": 8,
+    "avgExecutionsPerDay": 150
+  }
+}

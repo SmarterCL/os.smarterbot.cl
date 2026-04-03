@@ -1,0 +1,189 @@
+{
+  "name": "Install Template for Tenant",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "install-template",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [300, 300],
+      "webhookId": "install-template"
+    },
+    {
+      "parameters": {
+        "functionCode": "const body = $json;\n\nconst tenant = body.tenant;\nconst template = body.template;\n\nlet auth = $headers.authorization || \"\";\nauth = auth.replace(\"Bearer \", \"\");\n\nreturn [\n  {\n    json: {\n      tenant,\n      template,\n      token: auth,\n    },\n  },\n];"
+      },
+      "name": "Extract Inputs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/SmarterCL/n8n-workflows/main/automation-manifest.json",
+        "options": {}
+      },
+      "name": "Get Manifest from GitHub",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const manifest = items[0].json;\nconst input = $item(0,1).json;\n\nconst template = input.template;\nconst tenant = input.tenant;\n\nconst entry = manifest.workflows.find(w => w.id === template);\n\nif (!entry) {\n  throw new Error(\"Template no encontrada en manifest: \" + template);\n}\n\nreturn [\n  {\n    json: {\n      tenant,\n      template,\n      workflowPath: entry.path,\n    }\n  }\n];"
+      },
+      "name": "Find Template in Manifest",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://raw.githubusercontent.com/SmarterCL/n8n-workflows/main/{{$json.workflowPath}}",
+        "options": {}
+      },
+      "name": "Get Template JSON",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1500, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const base = items[0].json;\nconst tenant = $item(0,3).json.tenant;\nconst template = $item(0,3).json.template;\n\nconst cloned = {\n  ...base,\n  id: undefined,\n  name: `${template}-${tenant}`,\n  active: true,\n  tags: [\"tenant\", tenant, template],\n};\n\nreturn [\n  {\n    json: cloned\n  }\n];"
+      },
+      "name": "Clone Workflow",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1800, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://n8n-hostinger:5678/api/v1/workflows",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "name": "Create Workflow in n8n",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2100, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "1",
+          "name": "N8N API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"status\":\"installed\",\"workflowId\":\"{{$json.id}}\",\"name\":\"{{$json.name}}\"}",
+        "options": {}
+      },
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2400, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Inputs": {
+      "main": [
+        [
+          {
+            "node": "Get Manifest from GitHub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Manifest from GitHub": {
+      "main": [
+        [
+          {
+            "node": "Find Template in Manifest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Template in Manifest": {
+      "main": [
+        [
+          {
+            "node": "Get Template JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Template JSON": {
+      "main": [
+        [
+          {
+            "node": "Clone Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clone Workflow": {
+      "main": [
+        [
+          {
+            "node": "Create Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Workflow": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": true
+}

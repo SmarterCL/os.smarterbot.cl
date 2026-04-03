@@ -1,0 +1,102 @@
+/* ============================================
+   ECOCUPON KIOSK — Vertical Mode + Coupon Banner
+   ============================================ */
+
+/* Kiosk vertical mode */
+body.o_kiosk_mode {
+    max-width: 480px;
+    margin: 0 auto;
+    overflow-x: hidden;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    background: #f8f9fa;
+}
+
+body.o_kiosk_mode header,
+body.o_kiosk_mode footer {
+    display: none;
+}
+
+body.o_kiosk_mode .o_main {
+    padding: 0;
+    min-height: 100vh;
+}
+
+/* Coupon banner */
+.ecocupon-banner {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    border: 2px dashed #f59e0b;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    margin: 16px auto;
+    max-width: 440px;
+    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.15);
+}
+
+.ecocupon-banner h4 {
+    color: #92400e;
+    font-size: 1.3rem;
+    margin: 0 0 8px 0;
+}
+
+.ecocupon-banner p {
+    color: #78350f;
+    margin: 4px 0;
+}
+
+.ecocupon-banner .ecocupon-code {
+    display: inline-block;
+    background: #fff;
+    border: 2px solid #f59e0b;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-family: monospace;
+    font-size: 1.5em;
+    font-weight: bold;
+    color: #d97706;
+    letter-spacing: 3px;
+    margin: 8px 0;
+}
+
+/* Confirmation banner */
+.ecocupon-confirmation {
+    animation: couponSlideIn 0.5s ease-out;
+}
+
+@keyframes couponSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Checkout container vertical */
+.checkout-container {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+/* POS kiosk improvements */
+.pos .ecocupon-kiosk-banner {
+    background: #fef3c7;
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    text-align: center;
+}
+
+/* Responsive */
+@media (max-width: 576px) {
+    .ecocupon-banner {
+        margin: 12px;
+        padding: 16px;
+    }
+    .ecocupon-banner .ecocupon-code {
+        font-size: 1.2em;
+    }
+}

@@ -1,0 +1,203 @@
+{
+  "name": "MCP DB Analytics Daily Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "name": "Daily Trigger (8 AM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://mcp-db-toolbox:8000/execute",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tool",
+              "value": "execute_query"
+            },
+            {
+              "name": "params",
+              "value": "={\"sql\": \"SELECT COUNT(*) as total_customers FROM res_partner WHERE customer_rank > 0\"}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Query: Total Customers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "url": "http://mcp-db-toolbox:8000/execute",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tool",
+              "value": "execute_query"
+            },
+            {
+              "name": "params",
+              "value": "={\"sql\": \"SELECT COUNT(*) as new_leads FROM res_partner WHERE create_date >= CURRENT_DATE - INTERVAL '30 days'\"}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Query: New Leads (30 days)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [450, 350]
+    },
+    {
+      "parameters": {
+        "url": "http://mcp-db-toolbox:8000/execute",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tool",
+              "value": "execute_query"
+            },
+            {
+              "name": "params",
+              "value": "={\"sql\": \"SELECT SUM(amount_total) as monthly_sales FROM sale_order WHERE state IN ('sale', 'done') AND date_order >= DATE_TRUNC('month', CURRENT_DATE)\"}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Query: Monthly Sales",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const totalCustomers = $input.first().json.result[0].total_customers;\nconst newLeads = $input.all()[1].json.result[0].new_leads;\nconst monthlySales = $input.all()[2].json.result[0].monthly_sales;\n\nreturn [\n  {\n    json: {\n      total_customers: totalCustomers,\n      new_leads: newLeads,\n      monthly_sales: monthlySales || 0,\n      report_date: new Date().toISOString()\n    }\n  }\n];"
+        }
+      },
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [650, 350]
+    },
+    {
+      "parameters": {
+        "url": "https://api.smarterbot.cl/crm/stats/cache",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "data",
+              "value": "={{$json}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Cache in Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://metabase.smarterbot.cl/api/dashboard/1/refresh",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "metabaseApi",
+        "options": {}
+      },
+      "name": "Refresh Metabase Dashboard",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [850, 450]
+    }
+  ],
+  "connections": {
+    "Daily Trigger (8 AM)": {
+      "main": [
+        [
+          {
+            "node": "Query: Total Customers",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Query: New Leads (30 days)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Query: Monthly Sales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query: Total Customers": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query: New Leads (30 days)": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query: Monthly Sales": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Cache in Supabase",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Refresh Metabase Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

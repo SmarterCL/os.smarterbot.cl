@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.ecocupon</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[hasclass('settings')]" position="inside">
+                <div class="app_settings_block" data-string="EcoCupon" string="EcoCupon" data-key="ecocupon_kiosk">
+                    <h2>EcoCupon Kiosk</h2>
+                    <div class="row mt16 o_settings_container">
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane">
+                                <field name="ecocupon_enabled"/>
+                            </div>
+                            <div class="o_setting_right_pane">
+                                <label for="ecocupon_enabled"/>
+                                <div class="text-muted">Generar cupones automáticos al confirmar pedidos</div>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_right_pane">
+                                <label for="ecocupon_discount_type"/>
+                                <field name="ecocupon_discount_type"/>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_right_pane">
+                                <label for="ecocupon_discount_value"/>
+                                <field name="ecocupon_discount_value"/>
+                                <div class="text-muted">Valor del descuento del cupón</div>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_right_pane">
+                                <label for="ecocupon_validity_days"/>
+                                <field name="ecocupon_validity_days"/>
+                                <div class="text-muted">Días de validez del cupón</div>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-6 o_setting_box">
+                            <div class="o_setting_left_pane">
+                                <field name="ecocupon_emdash_enabled"/>
+                            </div>
+                            <div class="o_setting_right_pane">
+                                <label for="ecocupon_emdash_enabled" string="Usar Emdash (IA)"/>
+                                <div class="text-muted">Cupones inteligentes basados en historial</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </xpath>
+        </field>
+    </record>
+</odoo>

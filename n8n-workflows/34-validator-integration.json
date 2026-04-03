@@ -1,0 +1,139 @@
+{
+  "name": "SmarterOS - Validator Integration",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "validate-action",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-validate",
+      "name": "Webhook Validate Action",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "validate-action"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8007/validate",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "validator-api",
+      "name": "Call Validator API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "valid"
+            }
+          ]
+        }
+      },
+      "id": "check-valid",
+      "name": "¿Es Válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Acción validada correctamente\",\n  \"tenant\": \"={{ $json.tenant }}\",\n  \"amount\": {{ $json.amount }},\n  \"next_step\": \"ejecutar\"\n}",
+        "options": {}
+      },
+      "id": "response-valid",
+      "name": "Responder Válido",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"error\": \"validation_failed\",\n  \"reason\": \"{{ $json.reason }}\",\n  \"message\": \"La acción no pasó la validación\"\n}",
+        "options": {}
+      },
+      "id": "response-invalid",
+      "name": "Responder Inválido",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 400]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Validate Action": {
+      "main": [
+        [
+          {
+            "node": "Call Validator API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Validator API": {
+      "main": [
+        [
+          {
+            "node": "¿Es Válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es Válido?": {
+      "main": [
+        [
+          {
+            "node": "Responder Válido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder Inválido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "validator-integration-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "validator"
+    },
+    {
+      "name": "security"
+    },
+    {
+      "name": "financial-firewall"
+    }
+  ]
+}

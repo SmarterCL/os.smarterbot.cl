@@ -1,0 +1,178 @@
+{
+  "name": "SmarterOS v2 - Action Lifecycle Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "action/create",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-create-action",
+      "name": "Webhook Crear Acción",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "action-create"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// VALIDAR ACTION CONTRACT\n// ============================================\n\nconst action = $input.item.json;\n\n// Validaciones obligatorias\nconst errors = [];\n\nif (!action.action_id) {\n  errors.push('action_id es requerido');\n}\n\nif (!action.agent) {\n  errors.push('agent es requerido');\n}\n\nif (!action.target) {\n  errors.push('target es requerido');\n}\n\nif (!action.command) {\n  errors.push('command es requerido');\n}\n\nif (!action.timeout || action.timeout < 1 || action.timeout > 600) {\n  errors.push('timeout debe estar entre 1 y 600 segundos');\n}\n\n// Validar estado inicial\nconst validStatuses = ['created', 'pending', 'executing', 'done', 'error'];\nif (action.status && !validStatuses.includes(action.status)) {\n  errors.push(`status inválido: ${action.status}`);\n}\n\n// Validar prioridad\nconst validPriorities = ['low', 'medium', 'high', 'critical'];\nif (action.priority && !validPriorities.includes(action.priority)) {\n  errors.push(`prioridad inválida: ${action.priority}`);\n}\n\nif (errors.length > 0) {\n  throw new Error(`Contrato inválido: ${errors.join(', ')}`);\n}\n\n// Agregar metadata por defecto\nconst enrichedAction = {\n  ...action,\n  status: action.status || 'created',\n  priority: action.priority || 'medium',\n  created_at: new Date().toISOString(),\n  updated_at: new Date().toISOString()\n};\n\nreturn { json: enrichedAction };"
+      },
+      "id": "validate-contract",
+      "name": "Validar Action Contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_contracts",
+        "columns": "action_id,agent,target,command,params,expected_result,timeout,priority,status,metadata,created_at,updated_at",
+        "returnFields": "action_id"
+      },
+      "id": "supabase-insert-contract",
+      "name": "Guardar Action Contract",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "SmarterOS Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_states",
+        "columns": "action_id,status,logs",
+        "returnFields": "id"
+      },
+      "id": "supabase-insert-state",
+      "name": "Crear Estado Inicial",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "SmarterOS Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "action_lifecycle_logs",
+        "columns": "action_id,from_status,to_status,triggered_by,message",
+        "returnFields": "id"
+      },
+      "id": "supabase-insert-lifecycle",
+      "name": "Registrar Lifecycle",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "SmarterOS Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"action_id\": \"={{ $json.action_id }}\",\n  \"status\": \"created\",\n  \"message\": \"Action contract creado exitosamente\",\n  \"next_step\": \"pending\"\n}",
+        "options": {}
+      },
+      "id": "response-created",
+      "name": "Responder Creado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Crear Acción": {
+      "main": [
+        [
+          {
+            "node": "Validar Action Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Action Contract": {
+      "main": [
+        [
+          {
+            "node": "Guardar Action Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar Action Contract": {
+      "main": [
+        [
+          {
+            "node": "Crear Estado Inicial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear Estado Inicial": {
+      "main": [
+        [
+          {
+            "node": "Registrar Lifecycle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Lifecycle": {
+      "main": [
+        [
+          {
+            "node": "Responder Creado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "action-lifecycle-create-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "smarteros-v2"
+    },
+    {
+      "name": "action-contract"
+    },
+    {
+      "name": "lifecycle"
+    }
+  ]
+}

@@ -1,0 +1,203 @@
+{
+  "name": "EcoCupón - Scan Vehicle",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "scan-vehicle",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"body\"][\"patente\"]}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "validate-patente",
+      "name": "Validate Patente",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.ODOO_URL}}/jsonrpc",
+        "sendHeaders": {
+          "headers": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"call\",\n  \"params\": {\n    \"service\": \"object\",\n    \"method\": \"execute\",\n    \"args\": [\n      \"{{$env.ODOO_DB}}\",\n      {{$env.ODOO_UID}},\n      \"{{$env.ODOO_PASSWORD}}\",\n      \"crm.lead\",\n      \"create\",\n      [\n        {\n          \"name\": \"Lead Vehículo: {{$json[\"body\"][\"patente\"] || 'Sin patente'}}\",\n          \"contact_name\": \"={{$json[\"body\"][\"user\"][\"name\"] || 'Usuario Telegram'}}\",\n          \"email_from\": \"={{$json[\"body\"][\"user\"][\"username\"] || ''}}\",\n          \"phone\": \"={{$json[\"body\"][\"user\"][\"phone\"] || ''}}\",\n          \"description\": \"Patente: {{$json[\"body\"][\"patente\"] || 'N/A'}\\nFotos: {{$json[\"body\"][\"images\"]?.length || 0}}\\nNotas: {{$json[\"body\"][\"notes\"] || 'Sin notas'}}\",\n          \"x_vehicle_plate\": \"={{$json[\"body\"][\"patente\"] || ''}}\",\n          \"x_vehicle_score\": \"={{$json[\"body\"][\"score\"] || 70}}\",\n          \"x_vehicle_category\": \"={{$json[\"body\"][\"category\"] || 'reventa'}}\",\n          \"x_vehicle_images\": \"={{JSON.stringify($json[\"body\"][\"images\"] || [])}}\",\n          \"stage_id\": 1\n        }\n      ]\n    ]\n  }\n}",
+        "options": {}
+      },
+      "id": "odoo-create-lead",
+      "name": "Create Lead in Odoo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{$json[\"body\"][\"chat_id\"] || $json[\"body\"][\"user\"][\"chat_id\"]}}"
+            },
+            {
+              "name": "text",
+              "value": "🚗 *Ecocardiograma Completado*\n\n📊 Score: {{$json[\"body\"][\"score\"] || 70}}/100\nEstado: {{$json[\"body\"][\"category\"] || 'Reventa'}}\n\n💰 *Oferta:*\nEfectivo: ${{Math.floor(Math.random() * 500000 + 800000)}}\nCupón: ${{Math.floor(Math.random() * 100000 + 50000)}}\n\n✅ Lead creado en sistema\nID: {{$json[\"result\"][\"result\"] || 'N/A'}}\n\n¿Quieres que contactemos compradores?"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            },
+            {
+              "name": "reply_markup",
+              "value": "={\"inline_keyboard\":[[{\"text\":\"✅ Sí, contactar\",\"callback_data\":\"contact_buyers_{{$json[\"body\"][\"patente\"]}}\"},{\"text\":\"❌ No, gracias\",\"callback_data\":\"decline_offer_{{$json[\"body\"][\"patente\"]}}\"}]]}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "telegram-response",
+      "name": "Telegram Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{$json[\"body\"][\"chat_id\"] || $json[\"body\"][\"user\"][\"chat_id\"]}}"
+            },
+            {
+              "name": "text",
+              "value": "⚠️ Por favor ingresa la patente del vehículo (ej: ABCD12) o envía fotos para análisis."
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "telegram-error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"lead_id\": \"={{$json[\"result\"][\"result\"]}}\",\n  \"score\": {{$json[\"body\"][\"score\"] || 70}},\n  \"category\": \"{{$json[\"body\"][\"category\"] || 'reventa'}}\",\n  \"message\": \"Vehicle scanned successfully\"\n}",
+        "options": {}
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Patente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Patente": {
+      "main": [
+        [
+          {
+            "node": "Create Lead in Odoo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Lead in Odoo": {
+      "main": [
+        [
+          {
+            "node": "Telegram Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "ecocupon"
+    },
+    {
+      "name": "elcerokm"
+    },
+    {
+      "name": "chatops"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-03-29T20:45:00.000Z",
+  "versionId": "1"
+}

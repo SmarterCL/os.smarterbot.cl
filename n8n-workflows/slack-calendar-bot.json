@@ -1,0 +1,110 @@
+{
+  "name": "Slack Calendar Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "events": ["message"],
+        "options": {}
+      },
+      "name": "Slack Trigger",
+      "type": "n8n-nodes-base.slackTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "credentials": {
+        "slackApi": {
+          "id": "2",
+          "name": "Slack API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.text}}",
+              "operation": "contains",
+              "value2": "agenda"
+            }
+          ]
+        }
+      },
+      "name": "Check Command",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "calendarId": "primary",
+        "startDate": "={{DateTime.now().toISO()}}",
+        "endDate": "={{DateTime.now().plus({days: 7}).toISO()}}",
+        "options": {
+          "maxResults": 10,
+          "singleEvents": true,
+          "orderBy": "startTime"
+        }
+      },
+      "name": "Get Calendar Events",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 2,
+      "position": [650, 200],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "1",
+          "name": "Google Calendar OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const events = $input.all().map(i => i.json);\nconst channel = $('Slack Trigger').first().json.channel;\nconst user = $('Slack Trigger').first().json.user;\n\nconst formattedEvents = events.map(e => {\n  const start = DateTime.fromISO(e.start?.dateTime || e.start?.date);\n  return {\n    summary: e.summary,\n    start: start.toFormat('dd/MM/yyyy HH:mm'),\n    duration: e.end ? DateTime.fromISO(e.end.dateTime || e.end.date).diff(start, 'hours').hours + 'h' : 'Todo el día'\n  };\n});\n\nreturn {\n  json: {\n    channel,\n    user,\n    events: formattedEvents\n  }\n};"
+      },
+      "name": "Format Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "channel": "={{$json.channel}}",
+        "text": "📅 *Próximos eventos (7 días)*\n\n{{$json.events.map((e, i) => `${i+1}. *${e.summary}*\\n   📍 ${e.start} (${e.duration})`).join('\\n\\n')}}\n\n💡 Escribe `reservar demo` para agendar",
+        "attachments": [],
+        "otherOptions": {}
+      },
+      "name": "Send Calendar to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1050, 200],
+      "credentials": {
+        "slackApi": {
+          "id": "2",
+          "name": "Slack API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Slack Trigger": {
+      "main": [[{"node": "Check Command", "type": "main", "index": 0}]]
+    },
+    "Check Command": {
+      "main": [[{"node": "Get Calendar Events", "type": "main", "index": 0}]]
+    },
+    "Get Calendar Events": {
+      "main": [[{"node": "Format Events", "type": "main", "index": 0}]]
+    },
+    "Format Events": {
+      "main": [[{"node": "Send Calendar to Slack", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["slack", "calendar"],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-30T17:05:00.000Z",
+  "versionId": "1"
+}

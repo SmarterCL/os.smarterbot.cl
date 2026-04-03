@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Banner de cupón en checkout -->
+    <template id="checkout_coupon_banner" name="EcoCupon Checkout Banner">
+        <t t-call="website_sale.checkout">
+            <t t-set="additional_title">Checkout</t>
+        </t>
+    </template>
+
+    <!-- Inyectar banner en checkout existente -->
+    <template id="checkout_layout" inherit_id="website_sale.checkout_layout" name="EcoCupon Checkout Layout" customize_show="True">
+        <xpath expr="//div[hasclass('o_checkout_summary')]" position="before">
+            <div class="ecocupon-banner" t-if="website_sale_order and website_sale_order.partner_id">
+                <t t-set="active_coupon" t-value="request.env['ecocupon.coupon'].sudo().search([
+                    ('partner_id', '=', website_sale_order.partner_id.id),
+                    ('used', '=', False),
+                    ('active', '=', True)
+                ], order='create_date desc', limit=1)"/>
+                <t t-if="active_coupon">
+                    <h4>🎉 ¡Gracias por tu compra!</h4>
+                    <p>Tu cupón para la próxima orden:</p>
+                    <strong class="ecocupon-code" style="font-size:1.5em; color:#d97706;">
+                        <t t-esc="active_coupon.code"/>
+                    </strong>
+                    <p>
+                        <t t-if="active_coupon.discount_type == 'percentage'">
+                            Descuento: <t t-esc="active_coupon.discount_value"/>%
+                        </t>
+                        <t t-else="">
+                            Descuento: $<t t-esc="active_coupon.discount_value"/>
+                        </t>
+                        — Válido hasta <t t-esc="active_coupon.expiration_date" t-options="{'widget': 'date'}"/>
+                    </p>
+                </t>
+            </div>
+        </xpath>
+    </template>
+
+    <!-- Inyectar banner en order confirmation (thank you page) -->
+    <template id="confirmation_coupon_banner" inherit_id="website_sale.confirmation" name="EcoCupon Confirmation Banner">
+        <xpath expr="//div[hasclass('oe_structure')]" position="before">
+            <t t-set="new_coupon" t-value="request.env['ecocupon.coupon'].sudo().search([
+                ('order_id', '=', sale_order.id),
+                ('active', '=', True)
+            ], order='create_date desc', limit=1)"/>
+            <div class="ecocupon-banner ecocupon-confirmation" t-if="new_coupon" style="max-width:480px; margin:20px auto;">
+                <div style="background:linear-gradient(135deg,#fef3c7,#fde68a); border:2px dashed #f59e0b; border-radius:12px; padding:24px; text-align:center;">
+                    <div style="font-size:2.5rem; margin-bottom:8px;">🎉</div>
+                    <h3 style="color:#92400e; margin-bottom:8px;">¡Gracias por tu compra!</h3>
+                    <p style="color:#78350f; margin-bottom:12px;">Tu cupón para la próxima orden:</p>
+                    <div style="background:#fff; border:2px solid #f59e0b; border-radius:8px; padding:12px; margin:12px 0; font-family:monospace;">
+                        <span style="font-size:1.8em; font-weight:bold; color:#d97706; letter-spacing:3px;">
+                            <t t-esc="new_coupon.code"/>
+                        </span>
+                    </div>
+                    <p style="color:#78350f;">
+                        <t t-if="new_coupon.discount_type == 'percentage'">
+                            <strong><t t-esc="new_coupon.discount_value"/>% de descuento</strong>
+                        </t>
+                        <t t-else="">
+                            <strong>$<t t-esc="new_coupon.discount_value"/> de descuento</strong>
+                        </t>
+                    </p>
+                    <p style="color:#92400e; font-size:0.9em;">
+                        Válido hasta <t t-esc="new_coupon.expiration_date" t-options="{'widget': 'date'}"/>
+                    </p>
+                </div>
+            </div>
+        </xpath>
+    </template>
+
+    <!-- Configuración en settings -->
+    <template id="res_config_settings_view_form" inherit_id="res.config.settings.view.form" name="EcoCupon Settings">
+        <xpath expr="//div[hasclass('settings')]" position="inside">
+            <div class="app_settings_block" data-string="EcoCupon" string="EcoCupon" data-key="ecocupon_kiosk" t-if="module_ecocupon_kiosk">
+                <h2>EcoCupon Kiosk</h2>
+                <div class="row mt16 o_settings_container">
+                    <div class="col-12 col-lg-6 o_setting_box">
+                        <div class="o_setting_left_pane">
+                            <field name="ecocupon_enabled"/>
+                        </div>
+                        <div class="o_setting_right_pane">
+                            <label for="ecocupon_enabled" string="Activar EcoCupon"/>
+                            <div class="text-muted">Generar cupones automáticos al confirmar pedidos</div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-lg-6 o_setting_box">
+                        <div class="o_setting_left_pane">
+                            <field name="ecocupon_emdash_enabled"/>
+                        </div>
+                        <div class="o_setting_right_pane">
+                            <label for="ecocupon_emdash_enabled" string="Usar Emdash (IA)"/>
+                            <div class="text-muted">Cupones inteligentes basados en historial del cliente</div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-lg-6 o_setting_box">
+                        <div class="o_setting_right_pane">
+                            <label for="ecocupon_discount_type"/>
+                            <field name="ecocupon_discount_type"/>
+                            <div class="text-muted">Tipo de descuento del cupón</div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-lg-6 o_setting_box">
+                        <div class="o_setting_right_pane">
+                            <label for="ecocupon_discount_value"/>
+                            <field name="ecocupon_discount_value"/>
+                            <div class="text-muted">Valor del descuento</div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-lg-6 o_setting_box">
+                        <div class="o_setting_right_pane">
+                            <label for="ecocupon_validity_days"/>
+                            <field name="ecocupon_validity_days"/>
+                            <div class="text-muted">Días de validez del cupón</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </xpath>
+    </template>
+</odoo>

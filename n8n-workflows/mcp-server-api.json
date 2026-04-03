@@ -1,0 +1,100 @@
+{
+  "name": "MCP Server API - Public Endpoint",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mcp-server/http",
+        "authentication": "jwt",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-mcp",
+      "name": "Webhook MCP Server",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "mcp-server-http",
+      "authentication": "jwt"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// MCP SERVER - ROUTER DE ACCIONES\n// ============================================\n\nconst body = $input.item.json;\nconst action = body.action || body.tool || 'health';\n\n// Router de acciones MCP\nconst actions = {\n  'health': async () => ({\n    success: true,\n    service: 'mcp-server',\n    status: 'healthy',\n    timestamp: new Date().toISOString(),\n    version: '1.0.0'\n  }),\n  \n  'odoo_create_partner': async () => {\n    // Conectar a Odoo y crear partner\n    return {\n      success: true,\n      partner_id: Math.floor(Math.random() * 1000) + 100,\n      message: 'Partner creado (simulado)'\n    };\n  },\n  \n  'odoo_search_partner': async () => {\n    return {\n      success: true,\n      partners: [],\n      count: 0\n    };\n  },\n  \n  'picoclaw_check_validated': async () => {\n    return {\n      success: true,\n      validated: false,\n      message: 'Cliente no validado'\n    };\n  },\n  \n  'picoclaw_build_sale': async () => {\n    return {\n      success: true,\n      order_id: Math.floor(Math.random() * 100) + 1,\n      message: 'Venta construida'\n    };\n  },\n  \n  'dte_generate': async () => {\n    return {\n      success: true,\n      dte_id: 'F33E1234567',\n      status: 'GENERADO'\n    };\n  },\n  \n  'default': async () => ({\n    success: true,\n    message: `Acción '${action}' recibida`,\n    data: body,\n    timestamp: new Date().toISOString()\n  })\n};\n\nconst handler = actions[action] || actions['default'];\nconst result = await handler();\n\nreturn { json: result };"
+      },
+      "id": "mcp-router",
+      "name": "MCP Router",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "X-MCP-Server",
+                "value": "n8n-mcp-bridge"
+              },
+              {
+                "name": "X-MCP-Version",
+                "value": "1.0.0"
+              }
+            ]
+          }
+        }
+      },
+      "id": "response-mcp",
+      "name": "Responder MCP",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [650, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook MCP Server": {
+      "main": [
+        [
+          {
+            "node": "MCP Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MCP Router": {
+      "main": [
+        [
+          {
+            "node": "Responder MCP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "mcp-server-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "smarteros"
+    },
+    {
+      "name": "mcp"
+    },
+    {
+      "name": "api"
+    }
+  ]
+}

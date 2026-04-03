@@ -1,0 +1,277 @@
+{
+  "name": "SmarterOS - Picoclaw Onboarding",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "picoclaw-lead",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-onboarding",
+      "name": "Webhook Lead Validado",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "picoclaw-lead"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// DECISIÓN DE ONBOARDING SEGÚN TIPO\n// ============================================\n\nconst lead = $input.item.json;\nconst partnerId = lead.partner_id;\nconst tipo = lead.tipo || 'basico';\n\n// Definir acciones por tipo\nconst onboardingConfig = {\n  basico: {\n    enviar_email: true,\n    crear_tarea: true,\n    prioridad: 'baja',\n    dias_seguimiento: 7\n  },\n  premium: {\n    enviar_email: true,\n    crear_tarea: true,\n    enviar_whatsapp: true,\n    prioridad: 'media',\n    dias_seguimiento: 3\n  },\n  enterprise: {\n    enviar_email: true,\n    crear_tarea: true,\n    enviar_whatsapp: true,\n    agendar_llamado: true,\n    prioridad: 'alta',\n    dias_seguimiento: 1\n  }\n};\n\nconst config = onboardingConfig[tipo] || onboardingConfig.basico;\n\n// Construir payload para acciones\nconst actions = {\n  partner_id: partnerId,\n  tipo: tipo,\n  acciones: config,\n  timestamp: new Date().toISOString()\n};\n\nreturn { json: actions };"
+      },
+      "id": "decide-onboarding",
+      "name": "Decidir Onboarding",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:4000/sms-validated",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\n  \"nombre\": \"Equipo SmarterOS\",\n  \"telefono\": \"+56900000000\",\n  \"email\": \"onboarding@smarterbot.cl\",\n  \"origen\": \"ONBOARDING-{{ $json.tipo }}\"\n}",
+        "options": {}
+      },
+      "id": "log-onboarding",
+      "name": "Registrar en Picoclaw",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.acciones.enviar_email }}",
+              "operation": "equal",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-email",
+      "name": "¿Enviar email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mailgun.net/v3/smarterbot.cl/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        "body": "from=SmarterOS <onboarding@smarterbot.cl>&to={{ $json.email }}&subject=Bienvenido a SmarterOS - Onboarding {{ $json.tipo }}&text=¡Gracias por validar tu celular! Tu onboarding {{ $json.tipo }} ha comenzado. Te contactaremos pronto.",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Enviar Email Onboarding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 200],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "mailgun-api",
+          "name": "Mailgun API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.acciones.crear_tarea }}",
+              "operation": "equal",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-tarea",
+      "name": "¿Crear tarea?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://odoo-smarterbot-store:8069/xmlrpc/2/object",
+        "sendHeaders": {
+          "Content-Type": "text/xml"
+        },
+        "body": "<?xml version=\"1.0\"?>\n<methodCall>\n  <methodName>execute_kw</methodName>\n  <params>\n    <param><value><string>odoo_smarterbot_store</string></value></param>\n    <param><value><int>2</int></value></param>\n    <param><value><string>admin</string></value></param>\n    <param><value><string>mail.activity</string></value></param>\n    <param><value><string>create</string></value></param>\n    <param><value><struct>\n      <member><name>res_model_id</name><value><string>res.partner</string></value></member>\n      <member><name>res_id</name><value><int>{{ $json.partner_id }}</int></value></member>\n      <member><name>activity_type_id</name><value><int>1</int></value></member>\n      <member><name>summary</name><value><string>Seguimiento onboarding {{ $json.tipo }}</string></value></member>\n      <member><name>note</name><value><string>Cliente validado por SMS. Prioridad: {{ $json.acciones.prioridad }}</string></value></member>\n      <member><name>date_deadline</name><value><string>{{ $now.plus({ days: $json.acciones.dias_seguimiento }).format('yyyy-MM-dd') }}</string></value></member>\n    </struct></value></param>\n  </params>\n</methodCall>",
+        "options": {}
+      },
+      "id": "create-task-odoo",
+      "name": "Crear Tarea en Odoo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "smarter_events",
+        "columns": "metadata,payload,trust_score,timestamp,lifecycle",
+        "returnFields": "id"
+      },
+      "id": "supabase-log",
+      "name": "Guardar en Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "SmarterOS Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"partner_id\": \"={{ $json.partner_id }}\",\n  \"onboarding_tipo\": \"={{ $json.tipo }}\",\n  \"acciones\": \"={{ JSON.stringify($json.acciones) }}\",\n  \"message\": \"Onboarding iniciado\"\n}",
+        "options": {}
+      },
+      "id": "response-ok",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Lead Validado": {
+      "main": [
+        [
+          {
+            "node": "Decidir Onboarding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decidir Onboarding": {
+      "main": [
+        [
+          {
+            "node": "Registrar en Picoclaw",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar en Picoclaw": {
+      "main": [
+        [
+          {
+            "node": "¿Enviar email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Enviar email?": {
+      "main": [
+        [
+          {
+            "node": "Enviar Email Onboarding",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Crear tarea?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Email Onboarding": {
+      "main": [
+        [
+          {
+            "node": "¿Crear tarea?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Crear tarea?": {
+      "main": [
+        [
+          {
+            "node": "Crear Tarea en Odoo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Guardar en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear Tarea en Odoo": {
+      "main": [
+        [
+          {
+            "node": "Guardar en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en Supabase": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "picoclaw-onboarding-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "smarteros"
+    },
+    {
+      "name": "picoclaw"
+    },
+    {
+      "name": "onboarding"
+    }
+  ]
+}

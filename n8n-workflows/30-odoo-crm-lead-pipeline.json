@@ -1,0 +1,164 @@
+{
+  "name": "SmarterOS - Odoo CRM Lead Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead/incoming",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-lead",
+      "name": "Webhook Lead Incoming",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "lead-incoming"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// LIMPIAR Y VALIDAR LEAD\n// ============================================\n\nconst lead = $input.item.json;\n\n// Limpiar datos\nconst cleanedLead = {\n  name: lead.name || \"Lead sin nombre\",\n  email: lead.email ? lead.email.trim().toLowerCase() : null,\n  phone: lead.phone ? lead.phone.replace(/[^0-9+]/g, '') : null,\n  source: lead.source || \"web\",\n  company: lead.company || null,\n  message: lead.message || null\n};\n\n// Validar email básico\nif (cleanedLead.email && !cleanedLead.email.includes('@')) {\n  cleanedLead.email = null;\n}\n\n// Validar que tenga al menos email o teléfono\nif (!cleanedLead.email && !cleanedLead.phone) {\n  throw new Error('Lead debe tener email o teléfono');\n}\n\nreturn { json: cleanedLead };"
+      },
+      "id": "clean-lead",
+      "name": "Limpiar Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ODOO_URL || 'http://odoo.smarterbot.cl:8069' }}/xmlrpc/2/object",
+        "sendHeaders": {
+          "Content-Type": "text/xml"
+        },
+        "body": "<?xml version=\"1.0\"?>\n<methodCall>\n  <methodName>execute_kw</methodName>\n  <params>\n    <param><value><string>{{ $env.ODOO_DB || 'odoo_smarterbot_store' }}</string></value></param>\n    <param><value><int>{{ $env.ODOO_UID || 2 }}</int></value></param>\n    <param><value><string>{{ $env.ODOO_PASSWORD || 'admin' }}</string></value></param>\n    <param><value><string>crm.lead</string></value></param>\n    <param><value><string>create</string></value></param>\n    <param><value><struct>\n      <member><name>name</name><value><string>{{ $json.name }}</string></value></member>\n      <member><name>email_from</name><value><string>{{ $json.email }}</string></value></member>\n      <member><name>phone</name><value><string>{{ $json.phone }}</string></value></member>\n      <member><name>type</name><value><string>lead</string></value></member>\n      <member><name>description</name><value><string>{{ $json.message || 'Lead desde web' }}</string></value></member>\n      <member><name>tag_ids</name><value><array><data><value><int>1</int></value></data></array></value></member>\n    </struct></value></param>\n  </params>\n</methodCall>",
+        "options": {}
+      },
+      "id": "odoo-create-lead",
+      "name": "Crear Lead en Odoo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "ecocupon_customers",
+        "columns": "email,phone,name,metadata",
+        "returnFields": "id"
+      },
+      "id": "supabase-save-lead",
+      "name": "Guardar en Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// REGISTRAR EN BI\n// ============================================\n\nconst lead = $input.item.json;\n\nconst biEvent = {\n  event_type: 'lead_created',\n  lead_name: lead.name,\n  lead_email: lead.email,\n  lead_source: lead.source,\n  timestamp: new Date().toISOString()\n};\n\nreturn { json: biEvent };"
+      },
+      "id": "prepare-bi-event",
+      "name": "Preparar Evento BI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Lead registrado exitosamente\",\n  \"lead_name\": \"{{ $json.name }}\",\n  \"next_step\": \"Nuestro equipo te contactará en menos de 24 horas\"\n}",
+        "options": {}
+      },
+      "id": "response-ok",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Lead Incoming": {
+      "main": [
+        [
+          {
+            "node": "Limpiar Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpiar Lead": {
+      "main": [
+        [
+          {
+            "node": "Crear Lead en Odoo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear Lead en Odoo": {
+      "main": [
+        [
+          {
+            "node": "Guardar en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en Supabase": {
+      "main": [
+        [
+          {
+            "node": "Preparar Evento BI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Evento BI": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "odoo-crm-lead-pipeline-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "odoo"
+    },
+    {
+      "name": "crm"
+    },
+    {
+      "name": "leads"
+    }
+  ]
+}

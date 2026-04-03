@@ -1,0 +1,210 @@
+{
+  "name": "Telegram Bot - SmarterBOT",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"]
+      },
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-7631713367",
+          "name": "SmarterChat Bot",
+          "token": "${TELEGRAM_BOT_TOKEN}"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"message\"][\"text\"]}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "filter-text-messages",
+      "name": "Filter - Text Messages Only",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "tableId": "telegram_messages",
+        "fields": {
+          "fieldValues": [
+            {
+              "fieldId": "chat_id",
+              "fieldValue": "={{$json[\"message\"][\"chat\"][\"id\"]}}"
+            },
+            {
+              "fieldId": "user_id",
+              "fieldValue": "={{$json[\"message\"][\"from\"][\"id\"]}}"
+            },
+            {
+              "fieldId": "username",
+              "fieldValue": "={{$json[\"message\"][\"from\"][\"username\"] || $json[\"message\"][\"from\"][\"first_name\"]}}"
+            },
+            {
+              "fieldId": "message_text",
+              "fieldValue": "={{$json[\"message\"][\"text\"]}}"
+            },
+            {
+              "fieldId": "timestamp",
+              "fieldValue": "={{new Date($json[\"message\"][\"date\"] * 1000).toISOString()}}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "received"
+            }
+          ]
+        }
+      },
+      "id": "supabase-log-telegram",
+      "name": "Supabase - Log Telegram Message",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarterbot",
+          "name": "Supabase Smarterbot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "phi",
+        "options": {}
+      },
+      "id": "ollama-generate-response",
+      "name": "Ollama - Generate Response",
+      "type": "@n8n/n8n-nodes-langchain.lmOllama",
+      "typeVersion": 1,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{$json[\"message\"][\"text\"]}}",
+        "options": {
+          "systemMessage": "Eres un asistente útil de SmarterBOT. Responde de forma concisa y amable en español."
+        }
+      },
+      "id": "ollama-chat",
+      "name": "Ollama Chat",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json[\"message\"][\"chat\"][\"id\"]}}",
+        "text": "={{$json[\"output\"]}}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-send-reply",
+      "name": "Telegram - Send Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1050, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-7631713367",
+          "name": "SmarterChat Bot",
+          "token": "${TELEGRAM_BOT_TOKEN}"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "# 🤖 Telegram Bot SmarterBOT\n\n## Flujo:\n1. Telegram Trigger → Recibe mensajes\n2. Filter → Solo texto\n3. Supabase → Log message\n4. Ollama → Genera respuesta con IA local\n5. Telegram → Envía respuesta\n\n## Setup:\n1. Crear bot en @BotFather\n2. Copiar token\n3. Configurar credencial en n8n\n4. Activar workflow\n\n## Test:\nEnviar \"hola\" al bot en Telegram",
+        "height": 280,
+        "width": 350,
+        "color": 4
+      },
+      "id": "workflow-info",
+      "name": "Workflow Info",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [50, 200]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Filter - Text Messages Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter - Text Messages Only": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Log Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Log Telegram Message": {
+      "main": [
+        [
+          {
+            "node": "Ollama Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama - Generate Response": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Ollama Chat",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "America/Santiago",
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "save",
+    "saveDataSuccessExecution": "save",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {},
+  "triggerCount": 1
+}

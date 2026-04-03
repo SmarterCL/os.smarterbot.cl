@@ -1,0 +1,144 @@
+{
+  "name": "SmarterOS - Payment → Tenant Activation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "payment-confirmed",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-payment",
+      "name": "Webhook Pago Confirmado",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "payment-confirmed"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// PROCESAR PAGO CONFIRMADO\n// ============================================\n\nconst payment = $input.item.json;\n\n// Validar pago\nif (!payment.payment_id || !payment.tenant) {\n  throw new Error('Pago inválido');\n}\n\n// Preparar datos para activación\nconst activationData = {\n  payment_id: payment.payment_id,\n  tenant: payment.tenant,\n  amount: payment.amount,\n  customer_email: payment.customer_email,\n  activated_at: new Date().toISOString(),\n  status: 'active'\n};\n\nreturn { json: activationData };"
+      },
+      "id": "process-payment",
+      "name": "Procesar Pago",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "tenants",
+        "columns": "status,updated_at",
+        "filterType": "string",
+        "filterString": "slug=eq.{{ $json.tenant }}"
+      },
+      "id": "activate-tenant",
+      "name": "Activar Tenant en Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ODOO_URL || 'http://odoo.smarterbot.cl:8069' }}/xmlrpc/2/object",
+        "sendHeaders": {
+          "Content-Type": "text/xml"
+        },
+        "body": "<?xml version=\"1.0\"?>\n<methodCall>\n  <methodName>execute_kw</methodName>\n  <params>\n    <param><value><string>{{ $env.ODOO_DB || 'odoo_smarterbot_store' }}</string></value></param>\n    <param><value><int>{{ $env.ODOO_UID || 2 }}</int></value></param>\n    <param><value><string>{{ $env.ODOO_PASSWORD || 'admin' }}</string></value></param>\n    <param><value><string>res.partner</string></value></param>\n    <param><value><string>search</string></value></param>\n    <param><value><array><data><value><struct><member><name>email</name><value><string>{{ $json.customer_email }}</string></value></member></struct></value></data></array></value></param>\n  </params>\n</methodCall>",
+        "options": {}
+      },
+      "id": "check-customer-odoo",
+      "name": "Buscar Cliente en Odoo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Tenant activado exitosamente\",\n  \"tenant\": \"={{ $json.tenant }}\",\n  \"payment_id\": \"={{ $json.payment_id }}\",\n  \"status\": \"active\",\n  \"next_billing_date\": \"={{ new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0] }}\"\n}",
+        "options": {}
+      },
+      "id": "response-ok",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Pago Confirmado": {
+      "main": [
+        [
+          {
+            "node": "Procesar Pago",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Pago": {
+      "main": [
+        [
+          {
+            "node": "Activar Tenant en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Activar Tenant en Supabase": {
+      "main": [
+        [
+          {
+            "node": "Buscar Cliente en Odoo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Cliente en Odoo": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "payment-to-tenant-activation-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "payment"
+    },
+    {
+      "name": "tenant"
+    },
+    {
+      "name": "activation"
+    }
+  ]
+}

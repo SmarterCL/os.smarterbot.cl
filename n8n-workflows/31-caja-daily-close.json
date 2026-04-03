@@ -1,0 +1,253 @@
+{
+  "name": "SmarterOS - Caja Daily Close",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "interval": 24
+            }
+          ]
+        }
+      },
+      "id": "cron-daily",
+      "name": "CRON Diario (00:00)",
+      "type": "n8n-nodes-base.schedule",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// PREPARAR QUERY DE CIERRE DIARIO\n// ============================================\n\nconst yesterday = new Date();\nyesterday.setDate(yesterday.getDate() - 1);\n\nconst query = `\nSELECT\n  SUM(revenue) as ingresos,\n  SUM(total_cost) as costos,\n  SUM(revenue * 0.19) as iva_debito,\n  SUM(total_cost * 0.19) as iva_credito,\n  SUM(revenue - total_cost) as margen_bruto,\n  COUNT(*) as total_transacciones\nFROM bi_cost_tracking\nWHERE created_at >= CURRENT_DATE\n  AND created_at < CURRENT_DATE + INTERVAL '1 day'\n`;\n\nreturn {\n  json: {\n    query: query,\n    date: yesterday.toISOString().split('T')[0],\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "prepare-query",
+      "name": "Preparar Query SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.query }}",
+        "returnFields": "ingresos,costos,iva_debito,iva_credito,margen_bruto,total_transacciones"
+      },
+      "id": "supabase-query",
+      "name": "Ejecutar Query en Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// CALCULAR MÉTRICAS FINALES\n// ============================================\n\nconst data = $input.item.json;\n\nconst ingresos = parseFloat(data.ingresos) || 0;\nconst costos = parseFloat(data.costos) || 0;\nconst iva_debito = parseFloat(data.iva_debito) || 0;\nconst iva_credito = parseFloat(data.iva_credito) || 0;\nconst margen = parseFloat(data.margen_bruto) || 0;\n\nconst iva_pagar = iva_debito - iva_credito;\nconst margen_porcentaje = ingresos > 0 ? (margen / ingresos * 100) : 0;\n\nconst closeData = {\n  fecha: new Date().toISOString().split('T')[0],\n  ingresos: ingresos,\n  costos: costos,\n  iva_debito: iva_debito,\n  iva_credito: iva_credito,\n  iva_pagar: iva_pagar,\n  margen_bruto: margen,\n  margen_porcentaje: margen_porcentaje.toFixed(2),\n  total_transacciones: parseInt(data.total_transacciones) || 0,\n  timestamp: new Date().toISOString()\n};\n\nreturn { json: closeData };"
+      },
+      "id": "calculate-metrics",
+      "name": "Calcular Métricas Finales",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "bi_daily_close",
+        "columns": "fecha,ingresos,costos,iva_debito,iva_credito,iva_pagar,margen_bruto,margen_porcentaje,total_transacciones,metadata",
+        "returnFields": "id"
+      },
+      "id": "supabase-save-close",
+      "name": "Guardar Cierre en DB",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// VERIFICAR ALERTAS\n// ============================================\n\nconst close = $input.item.json;\n\nconst alerts = [];\n\n// Alerta: Margen bajo\nif (close.margen_porcentaje < 30) {\n  alerts.push({\n    type: 'low_margin',\n    message: `Margen bajo: ${close.margen_porcentaje}%`,\n    severity: 'warning'\n  });\n}\n\n// Alerta: Pérdida\nif (close.margen_bruto < 0) {\n  alerts.push({\n    type: 'loss',\n    message: `Pérdida del día: $${close.margen_bruto}`,\n    severity: 'critical'\n  });\n}\n\n// Alerta: IVA alto\nif (close.iva_pagar > 100000) {\n  alerts.push({\n    type: 'high_iva',\n    message: `IVA a pagar: $${close.iva_pagar}`,\n    severity: 'info'\n  });\n}\n\nreturn {\n  json: {\n    close: close,\n    alerts: alerts,\n    has_alerts: alerts.length > 0\n  }\n};"
+      },
+      "id": "check-alerts",
+      "name": "Verificar Alertas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.has_alerts }}",
+              "operation": "equal",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-has-alerts",
+      "name": "¿Hay Alertas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://n8n.smarterbot.cl/webhook/bolt-alert",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "={{ JSON.stringify({ alerts: $json.alerts, close: $json.close, type: 'daily_close' }) }}",
+        "options": {}
+      },
+      "id": "send-bolt-alert",
+      "name": "Enviar Alerta a BOLT",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Cierre diario completado\",\n  \"fecha\": \"{{ $json.close.fecha }}\",\n  \"ingresos\": {{ $json.close.ingresos }},\n  \"margen\": {{ $json.close.margen_bruto }},\n  \"margen_porcentaje\": \"{{ $json.close.margen_porcentaje }}%\",\n  \"alertas\": {{ $json.alerts.length }}\n}",
+        "options": {}
+      },
+      "id": "response-ok",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1850, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "CRON Diario (00:00)": {
+      "main": [
+        [
+          {
+            "node": "Preparar Query SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Query SQL": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar Query en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ejecutar Query en Supabase": {
+      "main": [
+        [
+          {
+            "node": "Calcular Métricas Finales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular Métricas Finales": {
+      "main": [
+        [
+          {
+            "node": "Guardar Cierre en DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar Cierre en DB": {
+      "main": [
+        [
+          {
+            "node": "Verificar Alertas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Alertas": {
+      "main": [
+        [
+          {
+            "node": "¿Hay Alertas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay Alertas?": {
+      "main": [
+        [
+          {
+            "node": "Enviar Alerta a BOLT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Alerta a BOLT": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "caja-daily-close-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "caja"
+    },
+    {
+      "name": "daily-close"
+    },
+    {
+      "name": "bi"
+    }
+  ]
+}

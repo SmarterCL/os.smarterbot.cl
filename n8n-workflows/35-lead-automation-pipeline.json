@@ -1,0 +1,271 @@
+{
+  "name": "SmarterOS - Lead Automation Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-in",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-lead",
+      "name": "Webhook Lead Entry",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "webhookId": "lead-in"
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "nombre",
+              "value": "={{$json[\"nombre\"]}}"
+            },
+            {
+              "name": "empresa",
+              "value": "={{$json[\"empresa\"]}}"
+            },
+            {
+              "name": "interes",
+              "value": "={{$json[\"interes\"]}}"
+            },
+            {
+              "name": "telefono",
+              "value": "={{$json[\"telefono\"] || ''}}"
+            },
+            {
+              "name": "email",
+              "value": "={{$json[\"email\"] || ''}}"
+            },
+            {
+              "name": "estado",
+              "value": "nuevo"
+            },
+            {
+              "name": "fuente",
+              "value": "n8n-webhook"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "normalize-lead",
+      "name": "Normalizar Lead",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://rjfcmmzjlguiititkmyh.supabase.co/rest/v1/leads",
+        "sendHeaders": {
+          "apikey": "${SUPABASE_SERVICE_KEY}",
+          "Authorization": "Bearer ${SUPABASE_SERVICE_KEY}",
+          "Content-Type": "application/json",
+          "Prefer": "return=representation"
+        },
+        "body": "={\"nombre\":\"{{$json.nombre}}\",\"empresa\":\"{{$json.empresa}}\",\"interes\":\"{{$json.interes}}\",\"telefono\":\"{{$json.telefono}}\",\"email\":\"{{$json.email}}\",\"estado\":\"{{$json.estado}}\",\"fuente\":\"{{$json.fuente}}\"}",
+        "options": {}
+      },
+      "id": "supabase-save-lead",
+      "name": "Guardar Lead en Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3002/api/v1/workspace/1/chat",
+        "sendHeaders": {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer DZ0NXD5-Q534YNA-KW1SZVK-H17SAB3"
+        },
+        "body": "={\"prompt\":\"Genera una propuesta comercial breve y profesional para:\\n\\nEmpresa: {{$json.empresa}}\\nInterés: {{$json.interes}}\\n\\nIncluye:\\n1. Problema detectado\\n2. Solución con automatización e IA\\n3. Beneficios claros\\n4. Siguiente paso\\n\\nFormato: Texto plano, directo, listo para enviar a cliente.\",\"mode\":\"chat\"}",
+        "options": {}
+      },
+      "id": "anythingllm-proposal",
+      "name": "Generar Propuesta (AnythingLLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// FORMATEAR PROPUESTA COMO ARCHIVO\n// ============================================\n\nconst proposal = $input.item.json.body || $input.item.json.response || JSON.stringify($input.item.json);\nconst empresa = $input.item.json.empresa || 'cliente';\nconst fileName = `propuesta-${empresa.replace(/\\s+/g, '-').toLowerCase()}.txt`;\n\nreturn {\n  json: {\n    fileName: fileName,\n    content: proposal,\n    data: Buffer.from(proposal).toString('base64')\n  }\n};"
+      },
+      "id": "format-file",
+      "name": "Formatear Archivo Propuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "leads",
+        "columns": "propuesta_generada,archivo_propuesta,estado",
+        "filterType": "string",
+        "filterString": "id=eq.{{ $json.id }}",
+        "returnFields": "id"
+      },
+      "id": "supabase-update-lead",
+      "name": "Actualizar Lead (Propuesta)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1200, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Lead procesado exitosamente\",\n  \"lead\": {\n    \"nombre\": \"{{ $json.nombre }}\",\n    \"empresa\": \"{{ $json.empresa }}\",\n    \"estado\": \"{{ $json.estado }}\"\n  },\n  \"propuesta\": {\n    \"generada\": true,\n    \"archivo\": \"{{ $json.fileName }}\"\n  },\n  \"next_step\": \"Revisar propuesta y contactar cliente\"\n}",
+        "options": {}
+      },
+      "id": "response-webhook",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.chatwoot.com/api/v1/accounts/1/conversations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\n  \"inbox_id\": 1,\n  \"contact_id\": null,\n  \"message\": {\n    \"content\": \"Nuevo lead: {{$json.nombre}} de {{$json.empresa}}\\nInterés: {{$json.interes}}\\nPropuesta generada: {{$json.fileName}}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "chatwoot-notification",
+      "name": "Notificar Chatwoot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1200, 500]
+    }
+  ],
+  "pinData": {
+    "Webhook Lead Entry": [
+      {
+        "json": {
+          "nombre": "Juan Pérez",
+          "empresa": "EcoFactory Chile",
+          "interes": "automatización de reciclaje",
+          "telefono": "+56912345678",
+          "email": "juan@ecofactory.cl"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook Lead Entry": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Lead": {
+      "main": [
+        [
+          {
+            "node": "Guardar Lead en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar Lead en Supabase": {
+      "main": [
+        [
+          {
+            "node": "Generar Propuesta (AnythingLLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar Propuesta (AnythingLLM)": {
+      "main": [
+        [
+          {
+            "node": "Formatear Archivo Propuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Archivo Propuesta": {
+      "main": [
+        [
+          {
+            "node": "Actualizar Lead (Propuesta)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notificar Chatwoot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar Lead (Propuesta)": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notificar Chatwoot": {
+      "main": [[]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "smarter-lead-automation-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "smarteros"
+    },
+    {
+      "name": "leads"
+    },
+    {
+      "name": "automation"
+    },
+    {
+      "name": "sales"
+    }
+  ]
+}

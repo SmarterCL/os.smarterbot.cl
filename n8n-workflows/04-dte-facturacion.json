@@ -1,0 +1,171 @@
+{
+  "name": "SmarterOS - Facturación Electrónica DTE",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dte-generate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-dte",
+      "name": "Webhook Generar DTE",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "dte-generate"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// PREPARAR DTE PARA LIBREDTE\n// ============================================\n\nconst factura = $input.item.json;\n\n// Mapear datos de Odoo a formato LibreDTE\nconst dteData = {\n  tipo_dte: \"33\",  // Factura electrónica\n  folio: factura.folio || 1,\n  emisor: {\n    rut: \"78233417-4\",\n    razon_social: \"SMARTER SPA\",\n    giro: \"Consultoría informática\",\n    direccion: \"Santiago\",\n    comuna: \"Santiago\"\n  },\n  receptor: {\n    rut: factura.receptor_rut || \"76.123.456-K\",\n    razon_social: factura.receptor_nombre || \"Cliente SpA\",\n    giro: factura.receptor_giro || \"Comercio\",\n    direccion: factura.receptor_direccion || \"Av. Principal 123\",\n    comuna: factura.receptor_comuna || \"Santiago\"\n  },\n  detalle: factura.lineas || [\n    {\n      codigo: \"01\",\n      cantidad: 1,\n      precio: factura.monto_neto || 300000,\n      descripcion: factura.descripcion || \"Implementación SmarterOS\"\n    }\n  ],\n  pagos: {\n    forma_pago: factura.forma_pago || \"1\",\n    monto_pagado: factura.monto_total || (factura.monto_neto * 1.19)\n  }\n};\n\n// Calcular montos\nconst neto = dteData.detalle[0].precio * dteData.detalle[0].cantidad;\nconst iva = neto * 0.19;\nconst total = neto + iva;\n\ndteData.totales = {\n  monto_neto: Math.round(neto),\n  iva: Math.round(iva),\n  monto_total: Math.round(total)\n};\n\nreturn { json: dteData };"
+      },
+      "id": "prepare-dte",
+      "name": "Preparar DTE Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://libredte-api:8080/api/v1/dte",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "libredte-generate",
+      "name": "LibreDTE Generar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://libredte-api:8080/api/v1/sii/enviar",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\\\"dte_id\\\": \\\"{{ $json.dte_id }}\\\"}",
+        "options": {}
+      },
+      "id": "libredte-send",
+      "name": "Enviar al SII",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "smarter_events",
+        "columns": "lifecycle,payload,executed_at",
+        "filterType": "string",
+        "filterString": "correlation_id=eq.{{ $json.correlation_id }}"
+      },
+      "id": "supabase-update-dte",
+      "name": "Actualizar en Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "SmarterOS Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"dte_id\": \"={{ $json.dte_id }}\",\n  \"estado\": \"{{ $json.estado }}\",\n  \"folio\": \"={{ $json.folio }}\",\n  \"mensaje\": \"DTE generado y enviado al SII\"\n}",
+        "options": {}
+      },
+      "id": "response-dte",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Generar DTE": {
+      "main": [
+        [
+          {
+            "node": "Preparar DTE Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar DTE Format": {
+      "main": [
+        [
+          {
+            "node": "LibreDTE Generar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LibreDTE Generar": {
+      "main": [
+        [
+          {
+            "node": "Enviar al SII",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar al SII": {
+      "main": [
+        [
+          {
+            "node": "Actualizar en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar en Supabase": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "dte-facturacion-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "smarteros"
+    },
+    {
+      "name": "dte"
+    },
+    {
+      "name": "facturacion"
+    }
+  ]
+}

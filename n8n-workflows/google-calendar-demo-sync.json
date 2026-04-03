@@ -1,0 +1,186 @@
+{
+  "name": "Google Calendar → Tenant Demo Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "calendarId": "primary",
+        "events": ["eventCreated", "eventUpdated", "eventDeleted"]
+      },
+      "name": "Google Calendar Trigger",
+      "type": "n8n-nodes-base.googleCalendarTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "google-calendar-smarteros",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "1",
+          "name": "Google Calendar OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.smarteros.cl/tenant/{{$json.tenantId}}/calendar-sync",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "event_id",
+              "value": "={{$json.id}}"
+            },
+            {
+              "name": "summary",
+              "value": "={{$json.summary}}"
+            },
+            {
+              "name": "start",
+              "value": "={{$json.start.dateTime}}"
+            },
+            {
+              "name": "end",
+              "value": "={{$json.end.dateTime}}"
+            },
+            {
+              "name": "attendees",
+              "value": "={{JSON.stringify($json.attendees)}}"
+            },
+            {
+              "name": "action",
+              "value": "={{$json.action}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "name": "Sync to Tenant API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.extendedProperties?.shared?.smarteros_demo}}",
+              "value2": "true"
+            }
+          ]
+        }
+      },
+      "name": "Is Demo Event?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const event = $input.first().json;\nconst tenantId = event.extendedProperties?.shared?.tenant_id || 'demo';\n\nreturn {\n  json: {\n    tenantId,\n    eventId: event.id,\n    summary: event.summary,\n    description: event.description,\n    start: event.start?.dateTime || event.start?.date,\n    end: event.end?.dateTime || event.end?.date,\n    attendees: event.attendees || [],\n    action: event.status === 'cancelled' ? 'deleted' : 'upserted'\n  }\n};"
+      },
+      "name": "Transform Event Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "channel": "demo-notifications",
+        "text": "🗓️ *Nueva Demo Agendada*\n\n*Tenant:* {{$json.tenantId}}\n*Evento:* {{$json.summary}}\n*Inicio:* {{$json.start}}\n*Fin:* {{$json.end}}\n*Asistentes:* {{$json.attendees.length}}\n\n✅ Sincronizado exitosamente",
+        "otherOptions": {}
+      },
+      "name": "Notify via Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1050, 100],
+      "credentials": {
+        "slackApi": {
+          "id": "2",
+          "name": "Slack API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendTemplate",
+        "chatId": "={{$json.attendees[0]?.phone || '+56912345678'}}",
+        "template": "demo_confirmation",
+        "components": {
+          "values": [
+            {
+              "type": "body",
+              "parameters": [
+                {
+                  "type": "text",
+                  "text": "={{$json.summary}}"
+                },
+                {
+                  "type": "text",
+                  "text": "={{$json.start}}"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "name": "Send WhatsApp Confirmation",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [1050, 200],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "3",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "recipientId": "={{$json.attendees[0]?.messenger_id}}",
+        "message": "🎉 ¡Tu demo está confirmada!\n\n📅 Evento: {{$json.summary}}\n🕒 Inicio: {{$json.start}}\n📍 Link: https://odoo.smarterbot.cl/demo/{{$json.tenantId}}\n\n¡Nos vemos pronto! 👋",
+        "options": {}
+      },
+      "name": "Send Messenger Message",
+      "type": "n8n-nodes-base.messengerTrigger",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "messengerApi": {
+          "id": "4",
+          "name": "Meta Messenger API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Google Calendar Trigger": {
+      "main": [[{"node": "Sync to Tenant API", "type": "main", "index": 0}]]
+    },
+    "Sync to Tenant API": {
+      "main": [[{"node": "Is Demo Event?", "type": "main", "index": 0}]]
+    },
+    "Is Demo Event?": {
+      "main": [[{"node": "Transform Event Data", "type": "main", "index": 0}]]
+    },
+    "Transform Event Data": {
+      "main": [
+        [
+          {"node": "Notify via Slack", "type": "main", "index": 0},
+          {"node": "Send WhatsApp Confirmation", "type": "main", "index": 0},
+          {"node": "Send Messenger Message", "type": "main", "index": 0}
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["calendar", "demo", "automation"],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-30T17:05:00.000Z",
+  "versionId": "1"
+}

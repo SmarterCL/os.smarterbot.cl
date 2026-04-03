@@ -1,0 +1,201 @@
+{
+  "name": "SmarterOS - Lead Scraping Simple",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead/scraping",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-scraping",
+      "name": "Webhook Scraping",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "lead-scraping"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// LIMPIAR LEADS DE SCRAPPING\n// ============================================\n\nconst leads = $input.item.json.leads || [];\n\n// Filtrar y limpiar leads\nconst cleanedLeads = leads\n  .filter(lead => {\n    // Validar que tenga email\n    if (!lead.email || !lead.email.includes('@')) {\n      return false;\n    }\n    \n    // Validar rubro (opcional)\n    const rubrosValidos = ['reciclaje', 'retail', 'servicios', 'comercio'];\n    if (lead.rubro && !rubrosValidos.some(r => lead.rubro.toLowerCase().includes(r))) {\n      return false;\n    }\n    \n    return true;\n  })\n  .map(lead => ({\n    name: lead.name || lead.empresa || \"Lead sin nombre\",\n    email: lead.email.trim().toLowerCase(),\n    phone: lead.phone ? lead.phone.replace(/[^0-9+]/g, '') : null,\n    company: lead.company || lead.empresa || null,\n    rubro: lead.rubro || null,\n    ciudad: lead.ciudad || null,\n    source: \"scraping\",\n    scraping_date: new Date().toISOString()\n  }));\n\nreturn { json: { leads: cleanedLeads, count: cleanedLeads.length } };"
+      },
+      "id": "clean-leads",
+      "name": "Limpiar Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// SEPARAR LEADS PARA PROCESAR\n// ============================================\n\nconst leads = $input.item.json.leads;\n\n// Retornar cada lead como item separado\nreturn leads.map(lead => ({ json: lead }));"
+      },
+      "id": "split-leads",
+      "name": "Separar Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ODOO_URL || 'http://odoo.smarterbot.cl:8069' }}/xmlrpc/2/object",
+        "sendHeaders": {
+          "Content-Type": "text/xml"
+        },
+        "body": "<?xml version=\"1.0\"?>\n<methodCall>\n  <methodName>execute_kw</methodName>\n  <params>\n    <param><value><string>{{ $env.ODOO_DB || 'odoo_smarterbot_store' }}</string></value></param>\n    <param><value><int>{{ $env.ODOO_UID || 2 }}</int></value></param>\n    <param><value><string>{{ $env.ODOO_PASSWORD || 'admin' }}</string></value></param>\n    <param><value><string>crm.lead</string></value></param>\n    <param><value><string>create</string></value></param>\n    <param><value><struct>\n      <member><name>name</name><value><string>{{ $json.name }}</string></value></member>\n      <member><name>email_from</name><value><string>{{ $json.email }}</string></value></member>\n      <member><name>phone</name><value><string>{{ $json.phone }}</string></value></member>\n      <member><name>type</name><value><string>lead</string></value></member>\n      <member><name>description</name><value><string>Lead desde scraping - Rubro: {{ $json.rubro || 'N/A' }}</string></value></member>\n      <member><name>tag_ids</name><value><array><data><value><int>2</int></value></data></array></value></member>\n    </struct></value></param>\n  </params>\n</methodCall>",
+        "options": {}
+      },
+      "id": "odoo-create-lead-scraping",
+      "name": "Crear Lead en Odoo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "ecocupon_customers",
+        "columns": "email,phone,name,metadata",
+        "returnFields": "id"
+      },
+      "id": "supabase-save-scraping",
+      "name": "Guardar en Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// AGREGAR METADATA\n// ============================================\n\nconst lead = $input.item.json;\n\nreturn {\n  json: {\n    success: true,\n    lead_name: lead.name,\n    lead_email: lead.email,\n    source: lead.source,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "prepare-response",
+      "name": "Preparar Respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Leads procesados exitosamente\",\n  \"leads_count\": {{ $json.leads_count || 1 }},\n  \"timestamp\": \"{{ $json.timestamp }}\"\n}",
+        "options": {}
+      },
+      "id": "response-ok",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    }
+  ],
+  "pinData": {
+    "Webhook Scraping": [
+      {
+        "json": {
+          "leads": [
+            {
+              "name": "Empresa Demo",
+              "email": "contacto@empresa.cl",
+              "phone": "+56912345678",
+              "rubro": "reciclaje",
+              "ciudad": "Santiago"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook Scraping": {
+      "main": [
+        [
+          {
+            "node": "Limpiar Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpiar Leads": {
+      "main": [
+        [
+          {
+            "node": "Separar Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar Leads": {
+      "main": [
+        [
+          {
+            "node": "Crear Lead en Odoo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear Lead en Odoo": {
+      "main": [
+        [
+          {
+            "node": "Guardar en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en Supabase": {
+      "main": [
+        [
+          {
+            "node": "Preparar Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Respuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "lead-scraping-simple-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "scraping"
+    },
+    {
+      "name": "leads"
+    },
+    {
+      "name": "odoo"
+    }
+  ]
+}

@@ -1,0 +1,265 @@
+{
+  "name": "SmarterOS - Tenant Cloning & Demo Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "clone-tenant",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-clone",
+      "name": "Webhook Clone Tenant",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "webhookId": "clone-tenant"
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "empresa",
+              "value": "={{$json[\"empresa\"]}}"
+            },
+            {
+              "name": "url_sitio",
+              "value": "={{$json[\"url\"]}}"
+            },
+            {
+              "name": "rubro",
+              "value": "={{$json[\"rubro\"] || 'general'}}"
+            },
+            {
+              "name": "contacto_email",
+              "value": "={{$json[\"email\"] || ''}}"
+            },
+            {
+              "name": "contacto_nombre",
+              "value": "={{$json[\"nombre\"] || ''}}"
+            },
+            {
+              "name": "estado",
+              "value": "demo"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "normalize-tenant",
+      "name": "Normalizar Tenant",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://rjfcmmzjlguiititkmyh.supabase.co/rest/v1/tenants",
+        "sendHeaders": {
+          "apikey": "${SUPABASE_SERVICE_KEY}",
+          "Authorization": "Bearer ${SUPABASE_SERVICE_KEY}",
+          "Content-Type": "application/json",
+          "Prefer": "return=representation"
+        },
+        "body": "={\"empresa\":\"{{$json.empresa}}\",\"url_sitio\":\"{{$json.url_sitio}}\",\"rubro\":\"{{$json.rubro}}\",\"contacto_email\":\"{{$json.contacto_email}}\",\"contacto_nombre\":\"{{$json.contacto_nombre}}\",\"estado\":\"{{$json.estado}}\"}",
+        "options": {}
+      },
+      "id": "supabase-save-tenant",
+      "name": "Guardar Tenant en Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3002/api/v1/workspace/1/chat",
+        "sendHeaders": {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer DZ0NXD5-Q534YNA-KW1SZVK-H17SAB3"
+        },
+        "body": "={\"prompt\":\"Genera una propuesta comercial personalizada para:\\n\\nEmpresa: {{$json.empresa}}\\nRubro: {{$json.rubro}}\\nSitio web: {{$json.url_sitio}}\\n\\nIncluye:\\n1. Problemas detectados en su rubro\\n2. Solución con automatización e IA\\n3. Beneficios específicos\\n4. Pricing sugerido\\n5. Siguiente paso\\n\\nFormato: Texto profesional, listo para enviar a cliente.\",\"mode\":\"chat\"}",
+        "options": {}
+      },
+      "id": "anythingllm-proposal",
+      "name": "Generar Propuesta (AnythingLLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// FORMATEAR PROPUESTA COMO ARCHIVO\n// ============================================\n\nconst proposal = $input.item.json.body || $input.item.json.response || JSON.stringify($input.item.json);\nconst empresa = $input.item.json.empresa || 'cliente';\nconst tenantId = $input.item.json.id || 'demo';\nconst fileName = `propuesta-${empresa.replace(/\\s+/g, '-').toLowerCase()}.txt`;\nconst demoUrl = `https://demo.smarterbot.cl/${tenantId}`;\n\nreturn {\n  json: {\n    fileName: fileName,\n    content: proposal,\n    data: Buffer.from(proposal).toString('base64'),\n    demoUrl: demoUrl,\n    tenantId: tenantId\n  }\n};"
+      },
+      "id": "format-file",
+      "name": "Formatear Archivo + Demo URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "tenants",
+        "columns": "propuesta_generada,archivo_propuesta,demo_url",
+        "filterType": "string",
+        "filterString": "id=eq.{{ $json.id }}",
+        "returnFields": "id"
+      },
+      "id": "supabase-update-tenant",
+      "name": "Actualizar Tenant (Propuesta)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1200, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Tenant creado y propuesta generada\",\n  \"tenant\": {\n    \"id\": \"{{ $json.id }}\",\n    \"empresa\": \"{{ $json.empresa }}\",\n    \"rubro\": \"{{ $json.rubro }}\"\n  },\n  \"demo\": {\n    \"url\": \"{{ $json.demoUrl }}\",\n    \"propuesta\": \"{{ $json.fileName }}\"\n  },\n  \"next_step\": \"Revisar demo y propuesta\"\n}",
+        "options": {}
+      },
+      "id": "response-webhook",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\n  \"chat_id\": \"{{ $json.chat_id }}\",\n  \"text\": \"✅ Demo generada para {{ $json.empresa }}\\n\\n🔗 Demo: {{ $json.demoUrl }}\\n📄 Propuesta: {{ $json.fileName }}\\n\\nRevisa tu demo personalizada y propuesta comercial.\",\n  \"parse_mode\": \"Markdown\"\n}",
+        "options": {}
+      },
+      "id": "telegram-notify",
+      "name": "Notificar Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1200, 500]
+    }
+  ],
+  "pinData": {
+    "Webhook Clone Tenant": [
+      {
+        "json": {
+          "empresa": "EcoFactory Chile",
+          "url": "https://ecofactory.cl",
+          "rubro": "reciclaje",
+          "email": "contacto@ecofactory.cl",
+          "nombre": "Juan Pérez"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook Clone Tenant": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Tenant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Tenant": {
+      "main": [
+        [
+          {
+            "node": "Guardar Tenant en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar Tenant en Supabase": {
+      "main": [
+        [
+          {
+            "node": "Generar Propuesta (AnythingLLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar Propuesta (AnythingLLM)": {
+      "main": [
+        [
+          {
+            "node": "Formatear Archivo + Demo URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Archivo + Demo URL": {
+      "main": [
+        [
+          {
+            "node": "Actualizar Tenant (Propuesta)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notificar Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar Tenant (Propuesta)": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notificar Telegram": {
+      "main": [[]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "smarter-tenant-cloning-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "smarteros"
+    },
+    {
+      "name": "tenants"
+    },
+    {
+      "name": "cloning"
+    },
+    {
+      "name": "demo"
+    }
+  ]
+}

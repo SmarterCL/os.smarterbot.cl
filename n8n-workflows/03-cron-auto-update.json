@@ -1,0 +1,228 @@
+{
+  "name": "SmarterOS - CRON Auto-Actualización",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "CRON Cada 5 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "schema": "public",
+        "table": "smarter_events",
+        "limit": 50,
+        "filterType": "string",
+        "filterString": "lifecycle=eq.decided&decided_at=gt.{{ $now.minus({ minutes: 5 }).toISOString() }}"
+      },
+      "id": "get-new-events",
+      "name": "Obtener eventos nuevos",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "SmarterOS Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// ANALIZADOR DE PATRONES - DETECTA COMPORTAMIENTOS\n// ============================================\n\nconst events = $input.all();\n\n// Contadores por intención\nconst intentCounts = {};\nconst territoryStats = {};\nconst productStats = {};\n\nevents.forEach(item => {\n  const event = item.json;\n  const intent = event.payload?.data?.intent || 'unknown';\n  const territory = event.metadata?.territory || 'unknown';\n  const product = event.payload?.data?.product || 'unknown';\n  \n  // Contar intenciones\n  intentCounts[intent] = (intentCounts[intent] || 0) + 1;\n  \n  // Stats por territorio\n  if (!territoryStats[territory]) {\n    territoryStats[territory] = { total: 0, intents: {} };\n  }\n  territoryStats[territory].total++;\n  territoryStats[territory].intents[intent] = (territoryStats[territory].intents[intent] || 0) + 1;\n  \n  // Stats por producto\n  if (product !== 'unknown') {\n    productStats[product] = (productStats[product] || 0) + 1;\n  }\n});\n\n// Detectar patrones\nconst patterns = [];\n\n// Patrón 1: Intención dominante\nconst maxIntent = Object.entries(intentCounts).sort((a, b) => b[1] - a[1])[0];\nif (maxIntent && maxIntent[1] > 3) {\n  patterns.push({\n    type: 'intent_dominance',\n    description: `Aumento en intención '${maxIntent[0]}' (${maxIntent[1]} eventos en 5 min)`,\n    action: 'adjust_prompt_focus',\n    priority: 'medium'\n  });\n}\n\n// Patrón 2: Territorio caliente\nconst hotTerritory = Object.entries(territoryStats)\n  .filter(([_, stats]) => stats.total > 5)\n  .sort((a, b) => b[1].total - a[1].total)[0];\n  \nif (hotTerritory) {\n  patterns.push({\n    type: 'territory_hot',\n    description: `Territorio ${hotTerritory[0]} muy activo (${hotTerritory[1].total} eventos)`,\n    action: 'increase_local_resources',\n    priority: 'high'\n  });\n}\n\n// Patrón 3: Producto trending\nconst trendingProduct = Object.entries(productStats).sort((a, b) => b[1] - a[1])[0];\nif (trendingProduct && trendingProduct[1] > 2) {\n  patterns.push({\n    type: 'product_trending',\n    description: `Producto '${trendingProduct[0]}' en demanda (${trendingProduct[1]} menciones)`,\n    action: 'update_stock_priority',\n    priority: 'high'\n  });\n}\n\n// Construir actualización del sistema\nconst systemUpdate = {\n  timestamp: new Date().toISOString(),\n  window: \"last_5_minutes\",\n  total_events: events.length,\n  patterns_detected: patterns,\n  intent_distribution: intentCounts,\n  territory_stats: territoryStats,\n  product_stats: productStats,\n  actions: {\n    update_mcp_prompt: patterns.length > 0,\n    notify_territories: Object.keys(territoryStats),\n    adjust_pricing: trendingProduct ? [trendingProduct[0]] : []\n  }\n};\n\nreturn { json: systemUpdate };"
+      },
+      "id": "analyze-patterns",
+      "name": "Analizar Patrones",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.patterns_detected.length }}",
+              "operation": "largerEqual",
+              "value2": 1
+            }
+          ]
+        }
+      },
+      "id": "has-patterns",
+      "name": "¿Hay patrones?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:4000/mcp/update-prompt",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "={{ JSON.stringify({ patterns: $json.patterns_detected, timestamp: $json.timestamp }) }}",
+        "options": {}
+      },
+      "id": "update-mcp-prompt",
+      "name": "Actualizar MCP Prompt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 200],
+      "credentials": {
+        "httpRequestAuth": {
+          "id": "picoclaw-api",
+          "name": "Picoclaw API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "smarter_patterns",
+        "columns": "timestamp,window,total_events,patterns,intent_distribution,territory_stats"
+      },
+      "id": "save-patterns",
+      "name": "Guardar en Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "SmarterOS Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hook.us2.make.com/smarteros-alerts",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "={{ JSON.stringify({ type: 'pattern_detected', patterns: $json.patterns_detected, timestamp: $json.timestamp }) }}",
+        "options": {},
+        "sendQuery": {},
+        "sendBody": {
+          "bodyType": "raw",
+          "rawContentType": "application/json"
+        }
+      },
+      "id": "send-alert",
+      "name": "Enviar Alerta (Telegram)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1450, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "CRON Cada 5 min": {
+      "main": [
+        [
+          {
+            "node": "Obtener eventos nuevos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener eventos nuevos": {
+      "main": [
+        [
+          {
+            "node": "Analizar Patrones",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analizar Patrones": {
+      "main": [
+        [
+          {
+            "node": "¿Hay patrones?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay patrones?": {
+      "main": [
+        [
+          {
+            "node": "Actualizar MCP Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Guardar en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar MCP Prompt": {
+      "main": [
+        [
+          {
+            "node": "Guardar en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en Supabase": {
+      "main": [
+        [
+          {
+            "node": "Enviar Alerta (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "cron-auto-update-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "smarteros"
+    },
+    {
+      "name": "cron"
+    },
+    {
+      "name": "auto-update"
+    }
+  ]
+}

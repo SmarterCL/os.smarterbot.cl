@@ -1,0 +1,192 @@
+{
+  "name": "MCP Security Alert Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "security-alert",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook: Security Alert",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "security-alert"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "alert_id",
+              "value": "={{$json[\"id\"]}}"
+            },
+            {
+              "name": "severity",
+              "value": "={{$json[\"severity\"]}}"
+            },
+            {
+              "name": "title",
+              "value": "={{$json[\"title\"]}}"
+            },
+            {
+              "name": "description",
+              "value": "={{$json[\"description\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Extract Alert Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"severity\"]}}",
+              "operation": "equals",
+              "value2": "critical"
+            }
+          ]
+        }
+      },
+      "name": "Is Critical?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://chatwoot.smarterbot.cl/api/v1/accounts/1/conversations",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "chatwootApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "inbox_id",
+              "value": "2"
+            },
+            {
+              "name": "message",
+              "value": "🚨 CRITICAL SECURITY ALERT\\n\\nTitle: {{$json[\"title\"]}}\\n\\nDescription: {{$json[\"description\"]}}\\n\\nAlert ID: {{$json[\"alert_id\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Create Chatwoot Alert (Critical)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://api.trello.com/1/cards",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "trelloApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "idList",
+              "value": "={{$env[\"TRELLO_SECURITY_LIST_ID\"]}}"
+            },
+            {
+              "name": "name",
+              "value": "🔒 {{$json[\"title\"]}}"
+            },
+            {
+              "name": "desc",
+              "value": "**Severity:** {{$json[\"severity\"]}}\\n\\n{{$json[\"description\"]}}\\n\\n**Alert ID:** {{$json[\"alert_id\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Create Trello Card",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": true, \"message\": \"Alert processed\", \"alert_id\": \"{{$json[\"alert_id\"]}}\"}"
+      },
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook: Security Alert": {
+      "main": [
+        [
+          {
+            "node": "Extract Alert Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Alert Data": {
+      "main": [
+        [
+          {
+            "node": "Is Critical?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Critical?": {
+      "main": [
+        [
+          {
+            "node": "Create Chatwoot Alert (Critical)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Trello Card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Chatwoot Alert (Critical)": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Trello Card": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

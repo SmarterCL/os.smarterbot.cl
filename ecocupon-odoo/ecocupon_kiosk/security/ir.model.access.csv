@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_ecocupon_coupon_user,ecocupon.coupon.user,model_ecocupon_coupon,base.group_user,1,1,1,0
+access_ecocupon_coupon_portal,ecocupon.coupon.portal,model_ecocupon_coupon,base.group_portal,1,0,0,0
+access_ecocupon_coupon_public,ecocupon.coupon.public,model_ecocupon_coupon,,1,0,0,0

@@ -1,0 +1,215 @@
+{
+  "name": "SmarterOS - Ecocupon Auto Response",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ecocupon/interaction",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-interaction",
+      "name": "Webhook Interacción",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "ecocupon-interaction"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// DETECTAR INTENCIÓN - ECOCUPON\n// ============================================\n\nconst input = $input.item.json;\nconst message = input.message || '';\nconst channel = input.channel || 'web';\n\n// Detectar intención basada en keywords\nconst intentPatterns = {\n  'recycling_point': ['punto', 'reciclar', 'dónde', 'ubicación', 'dirección'],\n  'coupon_status': ['cupón', 'descuento', 'vigencia', 'vencido'],\n  'material_info': ['plástico', 'vidrio', 'cartón', 'papel', 'metal'],\n  'customer_support': ['problema', 'ayuda', 'consulta', 'reclamo'],\n  'registration': ['registrar', 'crear', 'cuenta', 'unirme']\n};\n\nlet detectedIntent = 'general';\nlet confidence = 0.5;\n\nfor (const [intent, keywords] of Object.entries(intentPatterns)) {\n  const matches = keywords.filter(kw => message.toLowerCase().includes(kw));\n  if (matches.length > 0) {\n    detectedIntent = intent;\n    confidence = Math.min(0.5 + (matches.length * 0.15), 0.95);\n    break;\n  }\n}\n\n// Construir respuesta según intención\nconst responses = {\n  'recycling_point': {\n    message: '🌟 ¡Gracias por reciclar! Tenemos 3 puntos cerca de ti:\\n\\n📍 Santiago Centro - Av. OHiggins 1234\\n📍 Providencia - Av. Providencia 567\\n📍 Las Condes - Av. Apoquindo 890\\n\\nHorario: Lunes a Viernes 9:00-18:00\\n\\n¿Te gustaría que te enviemos la ubicación exacta?',\n    action: 'show_points',\n    follow_up: true\n  },\n  'coupon_status': {\n    message: '🎫 Para verificar tu cupón, necesito el código. ¿Me lo puedes compartir? (ej: ECO-ABC123)',\n    action: 'request_coupon_code',\n    follow_up: true\n  },\n  'material_info': {\n    message: '♻️ ¡Excelente pregunta! Aceptamos:\\n\\n🥤 Plásticos (PET, HDPE)\\n🍾 Vidrio (botellas, frascos)\\n📦 Cartón (limpio y seco)\\n📄 Papel (todo tipo)\\n🥫 Metal (latas, aluminio)\\n\\nPor cada kg reciclado, recibes $100 de descuento. ¿Qué material quieres reciclar?',\n    action: 'provide_info',\n    follow_up: true\n  },\n  'customer_support': {\n    message: '🤝 Lamento escuchar eso. Voy a crear un ticket para que te contactemos pronto. ¿Me puedes dejar tu email o teléfono?',\n    action: 'create_ticket',\n    follow_up: true\n  },\n  'registration': {\n    message: '🎉 ¡Bienvenido a Ecocupon! Para registrarte necesito:\\n\\n1️⃣ Tu email\\n2️⃣ Tu nombre\\n\\n¿Me los compartes?',\n    action: 'start_registration',\n    follow_up: true\n  },\n  'general': {\n    message: '🌱 ¡Hola! Soy el asistente virtual de Ecocupon.\\n\\nTe puedo ayudar con:\\n♻️ Puntos de reciclaje\\n🎫 Cupones y descuentos\\n📦 Materiales aceptados\\n🤝 Soporte\\n\\n¿En qué puedo ayudarte?',\n    action: 'show_menu',\n    follow_up: true\n  }\n};\n\nconst response = responses[detectedIntent] || responses['general'];\n\nreturn {\n  json: {\n    ...input,\n    detected_intent: detectedIntent,\n    confidence,\n    response_message: response.message,\n    response_action: response.action,\n    requires_follow_up: response.follow_up,\n    processed_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "detect-intent",
+      "name": "Detectar Intención",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// REGISTRAR INTERACCIÓN EN SUPABASE\n// ============================================\n\nconst interaction = $input.item.json;\n\nconst interactionData = {\n  customer_id: interaction.customer_id || null,\n  channel: interaction.channel || 'web',\n  interaction_type: interaction.detected_intent || 'general',\n  subject: `Consulta vía ${interaction.channel}`,\n  message: interaction.message || '',\n  response: interaction.response_message || '',\n  status: interaction.requires_follow_up ? 'in_progress' : 'resolved',\n  metadata: {\n    confidence: interaction.confidence,\n    action: interaction.response_action,\n    processed_at: interaction.processed_at\n  }\n};\n\nreturn { json: { interaction: interactionData, original: interaction } };"
+      },
+      "id": "prepare-interaction",
+      "name": "Preparar Datos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "ecocupon_interactions",
+        "columns": "customer_id,channel,interaction_type,subject,message,response,status,metadata",
+        "returnFields": "id"
+      },
+      "id": "supabase-save-interaction",
+      "name": "Guardar en Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.original.detected_intent }}",
+              "operation": "equals",
+              "value2": "customer_support"
+            }
+          ]
+        }
+      },
+      "id": "check-support",
+      "name": "¿Es Soporte?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.chatwoot.com/api/v1/accounts/1/conversations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\n  \"inbox_id\": 1,\n  \"contact_id\": null,\n  \"message\": {\n    \"content\": \"{{ $json.original.message }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "chatwoot-create-ticket",
+      "name": "Crear Ticket Chatwoot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 200],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"interaction_id\": \"={{ $json.id }}\",\n  \"intent\": \"={{ $json.original.detected_intent }}\",\n  \"confidence\": {{ $json.original.confidence }},\n  \"response\": \"{{ $json.original.response_message }}\",\n  \"requires_follow_up\": {{ $json.original.requires_follow_up }},\n  \"timestamp\": \"{{ $json.original.processed_at }}\"\n}",
+        "options": {}
+      },
+      "id": "response-ok",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"ticket_created\": true,\n  \"message\": \"Hemos creado un ticket. Te contactaremos pronto.\"\n}",
+        "options": {}
+      },
+      "id": "response-ticket",
+      "name": "Responder Ticket",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Interacción": {
+      "main": [
+        [
+          {
+            "node": "Detectar Intención",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detectar Intención": {
+      "main": [
+        [
+          {
+            "node": "Preparar Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Datos": {
+      "main": [
+        [
+          {
+            "node": "Guardar en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en Supabase": {
+      "main": [
+        [
+          {
+            "node": "¿Es Soporte?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es Soporte?": {
+      "main": [
+        [
+          {
+            "node": "Crear Ticket Chatwoot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear Ticket Chatwoot": {
+      "main": [
+        [
+          {
+            "node": "Responder Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ecocupon-auto-response-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "ecocupon"
+    },
+    {
+      "name": "auto-response"
+    },
+    {
+      "name": "tenant"
+    }
+  ]
+}

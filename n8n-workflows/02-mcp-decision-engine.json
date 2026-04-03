@@ -1,0 +1,201 @@
+{
+  "name": "SmarterOS - MCP Decision Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mcp-decision",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-mcp",
+      "name": "Webhook MCP Decision",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "mcp-decision-engine"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// MCP DECISION ENGINE - ANALIZA Y DECIDE ACCIÓN\n// ============================================\n\nconst event = $input.item.json;\nconst payload = event.payload;\nconst data = payload.data;\n\n// Matriz de decisión (intención → acción → herramienta)\nconst decisionMatrix = {\n  'purchase_urgent': {\n    action: 'create_sale',\n    tool: 'odoo_create_sale_order',\n    priority: 'high',\n    auto_execute: true\n  },\n  'pricing_request': {\n    action: 'send_quote',\n    tool: 'odoo_create_quotation',\n    priority: 'medium',\n    auto_execute: true\n  },\n  'support': {\n    action: 'create_ticket',\n    tool: 'chatwoot_create_conversation',\n    priority: 'medium',\n    auto_execute: false\n  },\n  'general_inquiry': {\n    action: 'nurture',\n    tool: 'mailgun_send_info',\n    priority: 'low',\n    auto_execute: true\n  }\n};\n\n// Obtener decisión basada en intención\nconst intent = data.intent || 'general_inquiry';\nconst decision = decisionMatrix[intent] || decisionMatrix['general_inquiry'];\n\n// Construir contexto para MCP\nconst mcpContext = {\n  event_id: event.id,\n  correlation_id: event.metadata.correlation_id,\n  decision: {\n    action: decision.action,\n    tool: decision.tool,\n    priority: decision.priority,\n    auto_execute: decision.auto_execute,\n    reason: `Intención detectada: ${intent}`\n  },\n  input_data: {\n    customer_id: data.customer_id,\n    phone: data.phone,\n    email: data.email,\n    message: data.message,\n    product: data.product\n  },\n  trust_score: event.trust_score,\n  territory: event.metadata.territory\n};\n\nreturn { json: mcpContext };"
+      },
+      "id": "mcp-analyze",
+      "name": "MCP Analizar Intención",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.decision.auto_execute }}",
+              "operation": "equal",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-auto",
+      "name": "¿Auto-ejecutar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:4000/mcp/execute",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "execute-mcp",
+      "name": "Ejecutar MCP Tool",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// ACTUALIZAR ESTADO EN SUPABASE\n// ============================================\n\nconst context = $input.item.json;\n\nconst updateData = {\n  lifecycle: 'decided',\n  decision: context.decision,\n  decided_at: new Date().toISOString()\n};\n\nreturn { json: updateData };"
+      },
+      "id": "update-status",
+      "name": "Preparar actualización",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "smarter_events",
+        "columns": "lifecycle,decision,decided_at",
+        "filterType": "string",
+        "filterString": "id=eq.{{ $json.event_id }}"
+      },
+      "id": "supabase-update",
+      "name": "Actualizar en Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-smarteros",
+          "name": "SmarterOS Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"event_id\": \"={{ $json.event_id }}\",\n  \"decision\": \"={{ JSON.stringify($json.decision) }}\",\n  \"tool\": \"={{ $json.decision.tool }}\",\n  \"message\": \"Decisión MCP procesada\"\n}",
+        "options": {}
+      },
+      "id": "response-mcp",
+      "name": "Responder Decisión",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook MCP Decision": {
+      "main": [
+        [
+          {
+            "node": "MCP Analizar Intención",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MCP Analizar Intención": {
+      "main": [
+        [
+          {
+            "node": "¿Auto-ejecutar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Auto-ejecutar?": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar MCP Tool",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar actualización",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ejecutar MCP Tool": {
+      "main": [
+        [
+          {
+            "node": "Preparar actualización",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar actualización": {
+      "main": [
+        [
+          {
+            "node": "Actualizar en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar en Supabase": {
+      "main": [
+        [
+          {
+            "node": "Responder Decisión",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "mcp-decision-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "smarteros"
+    },
+    {
+      "name": "mcp"
+    },
+    {
+      "name": "decision"
+    }
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "name": "🎫 EcoCupon — Odoo → Emdash → Cupón Inteligente",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "odoo-coupon",
+        "responseMode": "lastNode"
+      },
+      "name": "Webhook Odoo",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "odoo-coupon-webhook"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8009/search",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.body.product || 'general' }}"
+            },
+            {
+              "name": "partner_id",
+              "value": "={{ $json.body.partner_id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 800
+        }
+      },
+      "name": "Bookish Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8010/generate",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "input",
+              "value": "={{ `Generar cupón para: ${$json.body.product || 'compra general'}. Cliente #${$json.body.partner_id || 'nuevo'}. Monto: $${$json.body.amount || 0}. Historial: ${$json.body.history || 'primera compra'}. Responde solo con: código de cupón (formato ECO####) y descuento (5-25%).` }}"
+            },
+            {
+              "name": "context",
+              "value": "checkout_coupon"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 1200
+        }
+      },
+      "name": "Emdash Generate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "={{ { coupon_code: 'ECO' + String(Date.now()).slice(-4), discount: 10, source: 'fallback' } }}"
+      },
+      "name": "Fallback Coupon",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.text || '' }}",
+              "operation": "notEmpty"
+            }
+          ]
+        }
+      },
+      "name": "Has Emdash Response",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "requestMethod": "POST",
+        "url": "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "6683244662"
+            },
+            {
+              "name": "text",
+              "value": "={{ `🎫 *Cupón EcoCupon generado*\\n\\n📦 Pedido: ${$json.body.order_id || 'N/A'}\\n🎫 Código: ${$json.coupon_code || 'N/A'}\\n💰 Descuento: ${$json.discount || 10}%\\n👤 Cliente: ${$json.body.partner_id || 'Nuevo'}\\n\\n✅ Cupón activo en Odoo` }}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Notify Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "response": {
+          "response": "={{ { coupon_code: $json.coupon_code || 'FALLBACK', discount: $json.discount || 10, source: $json.source || 'emdash' } }}"
+        }
+      },
+      "name": "Respond to Odoo",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Odoo": {
+      "main": [[{ "node": "Bookish Search", "type": "main", "index": 0 }]]
+    },
+    "Bookish Search": {
+      "main": [[{ "node": "Emdash Generate", "type": "main", "index": 0 }]]
+    },
+    "Emdash Generate": {
+      "main": [
+        [{ "node": "Has Emdash Response", "type": "main", "index": 0 }],
+        [{ "node": "Fallback Coupon", "type": "main", "index": 0 }]
+      ]
+    },
+    "Has Emdash Response": {
+      "main": [
+        [{ "node": "Notify Telegram", "type": "main", "index": 0 }],
+        [{ "node": "Fallback Coupon", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fallback Coupon": {
+      "main": [[{ "node": "Respond to Odoo", "type": "main", "index": 0 }]]
+    },
+    "Notify Telegram": {
+      "main": [[{ "node": "Respond to Odoo", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["ecocupon", "odoo", "emdash", "coupons"]
+}

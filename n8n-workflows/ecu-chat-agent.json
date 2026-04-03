@@ -1,0 +1,204 @@
+{
+  "name": "🚗 ECU Agent — Chat → Venta",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "ecu-agent",
+        "responseMode": "lastNode"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "ecu-agent-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.message.toLowerCase() }}",
+              "operation": "contains",
+              "value2": "stage"
+            },
+            {
+              "value1": "={{ $json.body.message.toLowerCase() }}",
+              "operation": "contains",
+              "value2": "potencia"
+            },
+            {
+              "value1": "={{ $json.body.message.toLowerCase() }}",
+              "operation": "contains",
+              "value2": "mejora"
+            }
+          ]
+        },
+        "combinator": "or"
+      },
+      "name": "Detect Stage 1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.message.toLowerCase() }}",
+              "operation": "contains",
+              "value2": "dpf"
+            },
+            {
+              "value1": "={{ $json.body.message.toLowerCase() }}",
+              "operation": "contains",
+              "value2": "filtro"
+            },
+            {
+              "value1": "={{ $json.body.message.toLowerCase() }}",
+              "operation": "contains",
+              "value2": "partícula"
+            }
+          ]
+        },
+        "combinator": "or"
+      },
+      "name": "Detect DPF",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.message.toLowerCase() }}",
+              "operation": "contains",
+              "value2": "egr"
+            },
+            {
+              "value1": "={{ $json.body.message.toLowerCase() }}",
+              "operation": "contains",
+              "value2": "recirculación"
+            },
+            {
+              "value1": "={{ $json.body.message.toLowerCase() }}",
+              "operation": "contains",
+              "value2": "humo"
+            }
+          ]
+        },
+        "combinator": "or"
+      },
+      "name": "Detect EGR",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "content": "={{ `¡Excelente elección! 🏎️\\n\\n*Stage 1* — Reprogramación segura sin hardware adicional.\\n\\n✅ +20-30% HP y torque\\n✅ Sin riesgos mecánicos\\n✅ Reversible\\n\\n💰 Precio: $150\\n🕐 Entrega: 24h\\n\\n¿Quieres proceder?` }}",
+        "jsonOutput": true
+      },
+      "name": "Response Stage 1",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [700, 140]
+    },
+    {
+      "parameters": {
+        "content": "={{ `🔧 Entiendo tu problema con el DPF.\\n\\n*DPF OFF* — Solución definitiva:\\n\\n✅ Elimina regeneraciones forzadas\\n✅ Recupera potencia\\n✅ Mejora consumo\\n\\n💰 Precio: $120\\n🕐 Entrega: 24h\\n\\n¿Quieres solucionarlo?` }}",
+        "jsonOutput": true
+      },
+      "name": "Response DPF",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [700, 340]
+    },
+    {
+      "parameters": {
+        "content": "={{ `⚙️ Problemas de EGR son muy comunes.\\n\\n*EGR OFF* — Eliminación definitiva:\\n\\n✅ Elimina humo negro\\n✅ Mejora ralentí\\n✅ Mayor vida del motor\\n\\n💰 Precio: $100\\n🕐 Entrega: 24h\\n\\n¿Te interesa?` }}",
+        "jsonOutput": true
+      },
+      "name": "Response EGR",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [700, 540]
+    },
+    {
+      "parameters": {
+        "content": "={{ `Hola 👋 No estoy seguro de tu consulta específica.\\n\\nNuestros servicios:\\n🏎️ Stage 1 — +20-30% potencia ($150)\\n🔧 DPF OFF — Solución filtro ($120)\\n⚙️ EGR OFF — Eliminación válvula ($100)\\n\\n¿Cuál te interesa?` }}",
+        "jsonOutput": true
+      },
+      "name": "Response Default",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [700, 740]
+    },
+    {
+      "parameters": {
+        "response": {
+          "response": "={{ { response: $json.content, actions: [] } }}"
+        }
+      },
+      "name": "Format Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [920, 400]
+    },
+    {
+      "parameters": {
+        "response": {
+          "response": "={{ { response: $json.content, actions: [{text: '💳 Comprar', action: 'buy'}, {text: '📁 Subir archivo', action: 'upload'}] } }}"
+        }
+      },
+      "name": "Format Response with Actions",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [920, 340]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [{ "node": "Detect Stage 1", "type": "main", "index": 0 }]
+      ]
+    },
+    "Detect Stage 1": {
+      "main": [
+        [{ "node": "Response Stage 1", "type": "main", "index": 0 }],
+        [{ "node": "Detect DPF", "type": "main", "index": 0 }]
+      ]
+    },
+    "Detect DPF": {
+      "main": [
+        [{ "node": "Response DPF", "type": "main", "index": 0 }],
+        [{ "node": "Detect EGR", "type": "main", "index": 0 }]
+      ]
+    },
+    "Detect EGR": {
+      "main": [
+        [{ "node": "Response EGR", "type": "main", "index": 0 }],
+        [{ "node": "Response Default", "type": "main", "index": 0 }]
+      ]
+    },
+    "Response Stage 1": {
+      "main": [[{ "node": "Format Response with Actions", "type": "main", "index": 0 }]]
+    },
+    "Response DPF": {
+      "main": [[{ "node": "Format Response with Actions", "type": "main", "index": 0 }]]
+    },
+    "Response EGR": {
+      "main": [[{ "node": "Format Response with Actions", "type": "main", "index": 0 }]]
+    },
+    "Response Default": {
+      "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": ["ecu-tuning", "chat-agent", "sales"]
+}

@@ -1,0 +1,272 @@
+{
+  "name": "SmarterOS - Tenant Provisioning Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "provision-tenant",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-provision",
+      "name": "Webhook Provision Tenant",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "webhookId": "provision-tenant"
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "empresa",
+              "value": "={{$json[\"empresa\"]}}"
+            },
+            {
+              "name": "plan",
+              "value": "={{$json[\"plan\"] || 'starter'}}"
+            },
+            {
+              "name": "rut",
+              "value": "={{$json[\"rut\"]}}"
+            },
+            {
+              "name": "email",
+              "value": "={{$json[\"email\"]}}"
+            },
+            {
+              "name": "telefono",
+              "value": "={{$json[\"telefono\"]}}"
+            },
+            {
+              "name": "estado",
+              "value": "activo"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "normalize-tenant",
+      "name": "Normalizar Tenant",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://rjfcmmzjlguiititkmyh.supabase.co/rest/v1/tenants",
+        "sendHeaders": {
+          "apikey": "${SUPABASE_SERVICE_KEY}",
+          "Authorization": "Bearer ${SUPABASE_SERVICE_KEY}",
+          "Content-Type": "application/json",
+          "Prefer": "return=representation"
+        },
+        "body": "={\"empresa\":\"{{$json.empresa}}\",\"rubro\":\"{{$json.rubro}}\",\"url_sitio\":\"{{$json.url}}\",\"contacto_email\":\"{{$json.email}}\",\"contacto_nombre\":\"{{$json.contacto_nombre}}\",\"estado\":\"{{$json.estado}}\",\"metadata\":{\"plan\":\"{{$json.plan}}\",\"rut\":\"{{$json.rut}}\",\"telefono\":\"{{$json.telefono}}\"}}",
+        "options": {}
+      },
+      "id": "supabase-save-tenant",
+      "name": "Guardar Tenant en Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://tienda.smarterbot.cl/web/provision",
+        "sendHeaders": {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer {{ODOO_API_KEY}}"
+        },
+        "body": "={\"action\":\"clone_template\",\"tenant_id\":\"{{ $json.id }}\",\"template\":\"website_smarter_{{$json.plan}}\"}",
+        "options": {}
+      },
+      "id": "odoo-clone-template",
+      "name": "Clonar Template en Odoo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// GENERAR URLS Y CREDENCIALES\n// ============================================\n\nconst tenant = $input.item.json;\nconst tenantSlug = tenant.empresa.toLowerCase().replace(/\\s+/g, '-').replace(/[^a-z0-9-]/g, '');\nconst tempPassword = 'Smarter' + Math.random().toString(36).slice(-6);\n\nlet demoUrl = '';\nif (tenant.plan === 'pro') {\n  demoUrl = `https://${tenantSlug}.smarterbot.cl`;\n} else {\n  demoUrl = `https://tienda.smarterbot.cl/demo/${tenantSlug}`;\n}\n\nreturn {\n  json: {\n    ...tenant,\n    tenant_slug: tenantSlug,\n    demo_url: demoUrl,\n    admin_url: 'https://tienda.smarterbot.cl/web',\n    username: tenant.email,\n    temp_password: tempPassword,\n    plan_features: {\n      starter: ['QR dinámico', '1 flujo', '2 dispositivos'],\n      growth: ['Múltiples flujos', 'eCommerce', 'Chatwoot', '5 dispositivos'],\n      pro: ['Multi-sucursal', 'NFC + QR', 'IA personalizada', 'Dashboard BI', 'SLA 24/7']\n    }\n  }\n};"
+      },
+      "id": "generate-credentials",
+      "name": "Generar URLs y Credenciales",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendHeaders": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\n  \"chat_id\": \"{{ $json.admin_chat_id }}\",\n  \"text\": \"✅ Nuevo tenant provisionado\\n\\n🏢 Empresa: {{ $json.empresa }}\\n📦 Plan: {{ $json.plan }}\\n🔗 Demo: {{ $json.demo_url }}\\n👤 Usuario: {{ $json.username }}\\n\\n📄 Credenciales enviadas por email\",\n  \"parse_mode\": \"Markdown\"\n}",
+        "options": {}
+      },
+      "id": "telegram-notify-admin",
+      "name": "Notificar Admin (Telegram)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1200, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mailgun.net/v3/smarterbot.cl/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        "body": "from=SmarterOS <onboarding@smarterbot.cl>&to={{ $json.email }}&subject=Bienvenido a SmarterOS - Plan {{ $json.plan }}&text=¡Bienvenido!%0D%0A%0D%0ATu tenant ha sido creado exitosamente.%0D%0A%0D%0A🔗 Demo: {{ $json.demo_url }}%0D%0A👤 Usuario: {{ $json.username }}%0D%0A🔑 Password temporal: {{ $json.temp_password }}%0D%0A%0D%0AIngresa y cambia tu password.%0D%0A%0D%0A¡Éxito!%0D%0AEquipo SmarterOS",
+        "options": {}
+      },
+      "id": "email-onboarding",
+      "name": "Enviar Email Onboarding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1200, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Tenant provisionado exitosamente\",\n  \"tenant\": {\n    \"id\": \"{{ $json.id }}\",\n    \"empresa\": \"{{ $json.empresa }}\",\n    \"plan\": \"{{ $json.plan }}\",\n    \"tenant_slug\": \"{{ $json.tenant_slug }}\"\n  },\n  \"access\": {\n    \"demo_url\": \"{{ $json.demo_url }}\",\n    \"admin_url\": \"{{ $json.admin_url }}\",\n    \"username\": \"{{ $json.username }}\",\n    \"temp_password\": \"{{ $json.temp_password }}\"\n  },\n  \"features\": \"={{ JSON.stringify($json.plan_features[$json.plan]) }}\",\n  \"next_steps\": [\n    \"Ingresa a tu demo: {{ $json.demo_url }}\",\n    \"Cambia tu password temporal\",\n    \"Configura tu primera campaña\",\n    \"Contacta soporte para onboarding\"\n  ]\n}",
+        "options": {}
+      },
+      "id": "response-webhook",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1400, 300]
+    }
+  ],
+  "pinData": {
+    "Webhook Provision Tenant": [
+      {
+        "json": {
+          "empresa": "EcoFactory Chile",
+          "plan": "growth",
+          "rut": "78.233.417-4",
+          "email": "contacto@ecofactory.cl",
+          "telefono": "+56912345678",
+          "rubro": "reciclaje",
+          "url": "https://ecofactory.cl",
+          "contacto_nombre": "Juan Pérez"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook Provision Tenant": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Tenant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Tenant": {
+      "main": [
+        [
+          {
+            "node": "Guardar Tenant en Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar Tenant en Supabase": {
+      "main": [
+        [
+          {
+            "node": "Clonar Template en Odoo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clonar Template en Odoo": {
+      "main": [
+        [
+          {
+            "node": "Generar URLs y Credenciales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar URLs y Credenciales": {
+      "main": [
+        [
+          {
+            "node": "Notificar Admin (Telegram)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enviar Email Onboarding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notificar Admin (Telegram)": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Email Onboarding": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "smarter-provisioning-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "smarteros"
+    },
+    {
+      "name": "provisioning"
+    },
+    {
+      "name": "saas"
+    },
+    {
+      "name": "tenants"
+    }
+  ]
+}

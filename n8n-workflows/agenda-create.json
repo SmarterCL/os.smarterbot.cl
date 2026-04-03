@@ -1,0 +1,101 @@
+{
+  "name": "Agenda Create - Multi-tenant",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "agenda-create",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Agenda",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const tenant = $json.tenant;\nconst name = $json.name;\nconst phone = $json.phone;\nconst email = $json.email;\nconst datetime = $json.datetime;\nconst reason = $json.reason || 'Reunión comercial';\n\nreturn [{\n  tenant: tenant,\n  contact: {\n    name: name,\n    phone: phone,\n    email: email\n  },\n  event: {\n    datetime: datetime,\n    reason: reason\n  }\n}];"
+      },
+      "name": "Normalize Data",
+      "type": "n8n-nodes-base.function",
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://odoo.smarterbot.cl/api/v1/contacts",
+        "authentication": "genericCredentialType",
+        "httpMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ {\"name\": $json.contact.name, \"phone\": $json.contact.phone, \"email\": $json.contact.email} }}"
+      },
+      "name": "Create Contact Odoo",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://odoo.smarterbot.cl/api/v1/leads",
+        "authentication": "genericCredentialType",
+        "httpMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ {\"name\": \"Lead de \" + $json.contact.name, \"contact_id\": $json.id, \"stage\": \"Llamada agendada\"} }}"
+      },
+      "name": "Create Lead CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://odoo.smarterbot.cl/api/v1/calendar/events",
+        "authentication": "genericCredentialType",
+        "httpMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ {\"name\": $input.first().json.event.reason, \"start\": $input.first().json.event.datetime, \"duration\": 1, \"partner_id\": $json.contact_id} }}"
+      },
+      "name": "Create Calendar Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "url": "=https://crm.smarterbot.cl/api/v1/accounts/1/conversations",
+        "authentication": "genericCredentialType",
+        "httpMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ {\"source_id\": $input.first().json.contact.phone, \"inbox_id\": 1, \"message\": \"Nueva llamada agendada para \" + $input.first().json.event.datetime} }}"
+      },
+      "name": "Notify Chatwoot",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"success\": true, \"message\": \"Llamada agendada correctamente\", \"datetime\": $input.first().json.event.datetime} }}"
+      },
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Agenda": {
+      "main": [[{"node": "Normalize Data", "type": "main", "index": 0}]]
+    },
+    "Normalize Data": {
+      "main": [[{"node": "Create Contact Odoo", "type": "main", "index": 0}]]
+    },
+    "Create Contact Odoo": {
+      "main": [[{"node": "Create Lead CRM", "type": "main", "index": 0}]]
+    },
+    "Create Lead CRM": {
+      "main": [[{"node": "Create Calendar Event", "type": "main", "index": 0}]]
+    },
+    "Create Calendar Event": {
+      "main": [[{"node": "Notify Chatwoot", "type": "main", "index": 0}]]
+    },
+    "Notify Chatwoot": {
+      "main": [[{"node": "Response", "type": "main", "index": 0}]]
+    }
+  }
+}

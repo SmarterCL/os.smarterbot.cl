@@ -1,0 +1,206 @@
+{
+  "name": "SmarterOS - Email Ingestion (Mailgun)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "email-inbound",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-mailgun",
+      "name": "Webhook Mailgun",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "email-inbound-mailgun"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// MAILGUN → SMARTEROS EVENT SCHEMA v1\n// ============================================\n\nconst input = $input.item.json;\nconst timestamp = new Date().toISOString();\n\n// Extraer datos del payload de Mailgun\nconst from = input.sender || input.from || '';\nconst subject = input.subject || 'Sin asunto';\nconst body = input['body-plain'] || input.body || '';\nconst email = input.from || input.sender || '';\nconst to = input.recipient || input.to || '';\n\n// Detectar intent basado en contenido\nlet intent = 'general_inquiry';\nlet estimatedValue = 50000;\n\nconst lowerSubject = subject.toLowerCase();\nconst lowerBody = body.toLowerCase();\n\n// Palabras clave para clasificación\nif (lowerSubject.includes('precio') || lowerBody.includes('precio') ||\n    lowerSubject.includes('cotiz') || lowerBody.includes('cotiz')) {\n  intent = 'pricing_request';\n  estimatedValue = 150000;\n}\nelse if (lowerSubject.includes('demo') || lowerBody.includes('demo') ||\n         lowerSubject.includes('prueba') || lowerBody.includes('prueba')) {\n  intent = 'demo_request';\n  estimatedValue = 100000;\n}\nelse if (lowerSubject.includes('empresa') || lowerBody.includes('empresa') ||\n         lowerSubject.includes('negocio') || lowerBody.includes('negocio')) {\n  intent = 'enterprise_inquiry';\n  estimatedValue = 300000;\n}\nelse if (lowerSubject.includes('soporte') || lowerBody.includes('soporte') ||\n         lowerSubject.includes('ayuda') || lowerBody.includes('ayuda')) {\n  intent = 'support';\n  estimatedValue = 0;\n}\n\n// Extraer nombre del email\nconst nameMatch = from.match(/([^<]*)</) || from.match(/(.*)@/);\nconst name = nameMatch ? nameMatch[1].trim() : from.split('@')[0];\n\n// Determinar territorio basado en dominio\nlet territory = 'CL-RM';\nif (email.includes('.cl')) territory = 'CL-RM';\nelse if (email.includes('.ar')) territory = 'AR-BA';\nelse if (email.includes('.mx')) territory = 'MX-CMX';\nelse if (email.includes('.co')) territory = 'CO-DC';\nelse territory = 'CL-RM';\n\n// Construir evento normalizado\nconst event = {\n  metadata: {\n    source_box_id: 'MAILGUN-001',\n    territory: territory,\n    protocol: 'MCP-V1',\n    correlation_id: `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n    channel: 'email',\n    mailgun_data: {\n      to: to,\n      subject: subject,\n      message_id: input['message-id'] || null\n    }\n  },\n  payload: {\n    entity: 'Lead',\n    action: 'email_received',\n    data: {\n      intent: intent,\n      customer_id: null,\n      message: body,\n      phone: null,\n      email: email,\n      business_name: name,\n      product: null,\n      subject: subject,\n      from_name: name,\n      value_estimate: estimatedValue\n    }\n  },\n  trust_score: 0.75,\n  timestamp: timestamp,\n  lifecycle: 'ingested'\n};\n\nreturn { json: event };"
+      },
+      "id": "normalize-email",
+      "name": "Normalizar Email a Schema",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "smarter_events",
+        "columns": "metadata,payload,trust_score,timestamp,lifecycle",
+        "returnFields": "id"
+      },
+      "id": "postgres-insert",
+      "name": "Guardar en PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [650, 300],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-smarteros",
+          "name": "supabase-smarteros"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.smarterbot.cl/webhook/mcp-server/http",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.N8N_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "action",
+              "value": "odoo_create_partner"
+            },
+            {
+              "name": "data",
+              "value": "={{ JSON.stringify({\n  name: $json.payload.data.business_name,\n  email: $json.payload.data.email,\n  notes: $json.payload.data.subject + ' - ' + $json.payload.data.message,\n  source: 'email',\n  intent: $json.payload.data.intent,\n  value_estimate: $json.payload.data.value_estimate\n}) }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "mcp-odoo",
+      "name": "MCP → Odoo Create Partner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// ACTUALIZAR ESTADO A EXECUTED\n// ============================================\n\nconst input = $input.item.json;\n\nconst updateEvent = {\n  lifecycle: 'executed',\n  executed_at: new Date().toISOString(),\n  decision: {\n    action: 'odoo_create_partner',\n    status: 'success',\n    odoo_response: input.mcp_response || null\n  }\n};\n\nreturn { json: updateEvent };"
+      },
+      "id": "update-executed",
+      "name": "Actualizar Estado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "smarter_events",
+        "updateKey": "id",
+        "updateValue": "={{ $json.id }}",
+        "columns": "lifecycle,executed_at,decision",
+        "returnFields": "id"
+      },
+      "id": "postgres-update",
+      "name": "Actualizar Evento en DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1250, 300],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-smarteros",
+          "name": "supabase-smarteros"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Mailgun": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Email a Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Email a Schema": {
+      "main": [
+        [
+          {
+            "node": "Guardar en PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "MCP → Odoo Create Partner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MCP → Odoo Create Partner": {
+      "main": [
+        [
+          {
+            "node": "Actualizar Estado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar Estado": {
+      "main": [
+        [
+          {
+            "node": "Actualizar Evento en DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "email",
+      "createdAt": "2026-03-28T06:00:00.000Z",
+      "updatedAt": "2026-03-28T06:00:00.000Z"
+    },
+    {
+      "name": "mailgun",
+      "createdAt": "2026-03-28T06:00:00.000Z",
+      "updatedAt": "2026-03-28T06:00:00.000Z"
+    },
+    {
+      "name": "b2b",
+      "createdAt": "2026-03-28T06:00:00.000Z",
+      "updatedAt": "2026-03-28T06:00:00.000Z"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-03-28T07:00:00.000Z",
+  "versionId": "email-ingestion-v1"
+}

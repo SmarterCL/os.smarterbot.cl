@@ -1,0 +1,146 @@
+{
+  "name": "SmarterOS - Update Button",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "update-button",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "site",
+              "value": "={{$json[\"body\"][\"site\"]}}"
+            },
+            {
+              "name": "button_id",
+              "value": "={{$json[\"body\"][\"button_id\"]}}"
+            },
+            {
+              "name": "url",
+              "value": "={{$json[\"body\"][\"url\"]}}"
+            },
+            {
+              "name": "spec_path",
+              "value": "={{$json[\"body\"][\"spec_path\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-node",
+      "name": "Set Site Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "command": "cd /sites/{{$json[\"site\"]}} && git pull && echo '{{\"button_id\": \"{{$json[\"button_id\"]}\", \"url\": \"{{$json[\"url\"]}\"}}' >> buttons.json && git add . && git commit -m 'Update button: {{$json[\"button_id\"]}}' && git push",
+        "options": {}
+      },
+      "id": "git-push-node",
+      "name": "Git Push Update",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cloudflare.com/client/v4/zones/{{CLOUDFLARE_ZONE_ID}}/reload",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "caddy-reload-node",
+      "name": "Caddy Reload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Button updated successfully\",\n  \"data\": {\n    \"site\": \"={{$json[\"site\"]}}\",\n    \"button_id\": \"={{$json[\"button_id\"]}}\",\n    \"url\": \"={{$json[\"url\"]}}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "response-node",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set Site Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Site Config": {
+      "main": [
+        [
+          {
+            "node": "Git Push Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Git Push Update": {
+      "main": [
+        [
+          {
+            "node": "Caddy Reload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Caddy Reload": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "smarteros"
+    },
+    {
+      "name": "chatops"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-03-29T20:30:00.000Z",
+  "versionId": "1"
+}

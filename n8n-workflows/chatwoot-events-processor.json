@@ -1,0 +1,522 @@
+{
+  "name": "Chatwoot Events Processor",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chatwoot-events",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-chatwoot-events",
+      "name": "Webhook - Chatwoot Events",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "chatwoot-events"
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.event}}",
+                    "operation": "equals",
+                    "value2": "conversation_created"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "conversation_created"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.event}}",
+                    "operation": "equals",
+                    "value2": "message_created"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "message_created"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.event}}",
+                    "operation": "equals",
+                    "value2": "conversation_resolved"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "conversation_resolved"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "switch-event-type",
+      "name": "Switch - Event Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "row",
+        "tableId": "chatwoot_events",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "tenant_id",
+              "fieldValue": "={{$json.headers['x-smos-tenant'] || 'default'}}"
+            },
+            {
+              "fieldId": "event_type",
+              "fieldValue": "={{$json.event}}"
+            },
+            {
+              "fieldId": "event_id",
+              "fieldValue": "={{$json.id}}"
+            },
+            {
+              "fieldId": "conversation_id",
+              "fieldValue": "={{$json.conversation?.id}}"
+            },
+            {
+              "fieldId": "message_id",
+              "fieldValue": "={{$json.message?.id}}"
+            },
+            {
+              "fieldId": "contact_id",
+              "fieldValue": "={{$json.sender?.id}}"
+            },
+            {
+              "fieldId": "payload",
+              "fieldValue": "={{JSON.stringify($json)}}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "success"
+            }
+          ]
+        }
+      },
+      "id": "supabase-log-event",
+      "name": "Supabase - Log Event",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 100],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Smarterbot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.smarterbot.cl/odoo/leads",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "={{$json.sender.name}}"
+            },
+            {
+              "name": "email_from",
+              "value": "={{$json.sender.email}}"
+            },
+            {
+              "name": "phone",
+              "value": "={{$json.sender.phone_number}}"
+            },
+            {
+              "name": "source",
+              "value": "Chatwoot Chat"
+            },
+            {
+              "name": "conversation_id",
+              "value": "={{$json.conversation.id}}"
+            },
+            {
+              "name": "type",
+              "value": "opportunity"
+            },
+            {
+              "name": "stage_id",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "http-create-odoo-lead",
+      "name": "HTTP - Create Odoo Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.message?.message_type}}",
+              "operation": "equals",
+              "value2": "incoming"
+            }
+          ]
+        }
+      },
+      "id": "filter-incoming-messages",
+      "name": "Filter - Incoming Messages Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://botpress.smarterbot.cl/api/classify",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{$json.message.content}}"
+            },
+            {
+              "name": "language",
+              "value": "es"
+            },
+            {
+              "name": "context",
+              "value": "={{JSON.stringify({\n  conversation_id: $json.conversation.id,\n  sender_id: $json.sender.id\n})}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-botpress-classify",
+      "name": "HTTP - Botpress Classify Intent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.intent}}",
+                    "operation": "equals",
+                    "value2": "cotizacion"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "cotizacion"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.intent}}",
+                    "operation": "equals",
+                    "value2": "soporte"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "soporte"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.intent}}",
+                    "operation": "equals",
+                    "value2": "informacion"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "informacion"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "switch-intent-type",
+      "name": "Switch - Intent Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate auto-reply based on intent\nconst intent = $input.item.json.intent;\nconst confidence = $input.item.json.confidence;\nconst conversationId = $input.item.json.context.conversation_id;\n\nlet response = '';\n\nif (intent === 'cotizacion') {\n  response = '¡Hola! 👋 Gracias por tu interés. Un ejecutivo se pondrá en contacto contigo pronto para preparar una cotización personalizada. ¿Podrías compartir más detalles sobre lo que necesitas?';\n} else if (intent === 'soporte') {\n  response = 'Hola, estoy aquí para ayudarte. 🛠️ ¿Podrías describir el problema que estás experimentando? Nuestro equipo de soporte técnico lo revisará de inmediato.';\n} else if (intent === 'informacion') {\n  response = '¡Hola! 😊 ¿En qué puedo ayudarte? Puedo brindarte información sobre nuestros servicios, precios, y más. ¿Qué te gustaría saber?';\n} else {\n  response = 'Hola, gracias por contactarnos. Un miembro de nuestro equipo te responderá en breve. ⏰';\n}\n\nreturn {\n  conversationId,\n  content: response,\n  messageType: 'outgoing',\n  private: false\n};"
+      },
+      "id": "code-generate-response",
+      "name": "Code - Generate Auto Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.smarterbot.cl/chatwoot/conversations/{{$json.conversationId}}/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-SMOS-Tenant",
+              "value": "={{$('Webhook - Chatwoot Events').item.json.headers['x-smos-tenant'] || 'default'}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{$json.content}}"
+            },
+            {
+              "name": "message_type",
+              "value": "outgoing"
+            },
+            {
+              "name": "private",
+              "value": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-send-auto-reply",
+      "name": "HTTP - Send Auto Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://api.smarterbot.cl/odoo/leads/update",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "conversation_id",
+              "value": "={{$json.conversation.id}}"
+            },
+            {
+              "name": "status",
+              "value": "={{$json.conversation.status === 'resolved' ? 'won' : 'lost'}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-update-odoo-lead",
+      "name": "HTTP - Update Odoo Lead Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 600]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "resource": "row",
+        "tableId": "chatwoot_events",
+        "filterType": "manual",
+        "matchingColumns": "event_id",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "error"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{$json.error || 'Unknown error'}}"
+            }
+          ]
+        }
+      },
+      "id": "supabase-log-error",
+      "name": "Supabase - Log Error",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 100],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Smarterbot"
+        }
+      },
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {
+    "Webhook - Chatwoot Events": {
+      "main": [
+        [
+          {
+            "node": "Switch - Event Type",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Supabase - Log Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch - Event Type": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Create Odoo Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Filter - Incoming Messages Only",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP - Update Odoo Lead Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter - Incoming Messages Only": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Botpress Classify Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Botpress Classify Intent": {
+      "main": [
+        [
+          {
+            "node": "Switch - Intent Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch - Intent Type": {
+      "main": [
+        [
+          {
+            "node": "Code - Generate Auto Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code - Generate Auto Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code - Generate Auto Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code - Generate Auto Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Generate Auto Response": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Send Auto Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Log Event": {
+      "main": [
+        []
+      ]
+    },
+    "HTTP - Send Auto Reply": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "id": "chatwoot-events-processor",
+  "meta": {
+    "instanceId": "smarterbot-n8n"
+  },
+  "tags": [
+    {
+      "name": "chatwoot",
+      "id": "1"
+    },
+    {
+      "name": "automation",
+      "id": "2"
+    }
+  ]
+}

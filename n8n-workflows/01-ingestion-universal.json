@@ -1,0 +1,140 @@
+{
+  "name": "SmarterOS - Ingesta Universal",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "smarter-ingest",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-ingest",
+      "name": "Webhook Ingesta",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "smarter-ingest-universal"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// NORMALIZACIÓN A SMARCOS EVENT SCHEMA v1\n// ============================================\n\nconst input = $input.item.json;\nconst timestamp = new Date().toISOString();\n\n// Determinar fuente\nlet sourceBox = 'UNKNOWN';\nlet territory = 'CL-UNKNOWN';\nlet entityType = 'Lead';\nlet action = 'unknown';\nlet intent = 'general_inquiry';\nlet trustScore = 0.5;\n\n// Chatwoot webhook\nif (input.message_type === 'incoming' || input.source === 'chatwoot') {\n  sourceBox = 'CHATWOOT-001';\n  territory = input.conversation?.metadata?.territory || 'CL-RM';\n  entityType = 'Message';\n  action = 'customer_inquiry';\n  intent = input.content?.includes('precio') ? 'pricing_request' : 'general_inquiry';\n  trustScore = 0.85;\n}\n\n// Google Maps scraper\nelse if (input.source === 'maps_scraper' || input.google_maps_url) {\n  sourceBox = 'SCRAPER-001';\n  territory = 'CL-RM-CENTRO';\n  entityType = 'Lead';\n  action = 'lead_discovered';\n  intent = 'general_inquiry';\n  trustScore = 0.70;\n}\n\n// Odoo event\nelse if (input.source === 'odoo' || input.model) {\n  sourceBox = 'ODOO-CORE';\n  territory = 'CL-RM';\n  entityType = input.model || 'Partner';\n  action = input.event_type || 'record_updated';\n  intent = input.intent || 'general_inquiry';\n  trustScore = 0.95;\n}\n\n// Mailgun webhook\nelse if (input.event === 'clicked' || input.source === 'mailgun') {\n  sourceBox = 'MAILGUN-001';\n  territory = 'CL-BIO';\n  entityType = 'Message';\n  action = 'email_reply';\n  intent = 'support';\n  trustScore = 0.90;\n}\n\n// Picoclaw validación\nelse if (input.source === 'picoclaw' || input.sms_validated) {\n  sourceBox = 'PICOLAW-001';\n  territory = 'CL-RM';\n  entityType = 'Partner';\n  action = 'validated';\n  intent = 'purchase_urgent';\n  trustScore = 1.0;\n}\n\n// Construir evento normalizado\nconst event = {\n  metadata: {\n    source_box_id: sourceBox,\n    territory: territory,\n    protocol: 'MCP-V1',\n    correlation_id: `evt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`\n  },\n  payload: {\n    entity: entityType,\n    action: action,\n    data: {\n      intent: intent,\n      customer_id: input.customer_id || input.id || null,\n      message: input.content || input.message || input.description || null,\n      phone: input.phone || input.telefono || null,\n      email: input.email || null,\n      business_name: input.business_name || input.name || null,\n      product: input.product || input.product_id || null,\n      // Datos específicos por fuente\n      channel: input.channel || null,\n      campaign_id: input.campaign_id || null,\n      order_id: input.order_id || null,\n      amount_total: input.amount_total || null\n    }\n  },\n  trust_score: trustScore,\n  timestamp: timestamp,\n  lifecycle: 'ingested'\n};\n\nreturn { json: event };"
+      },
+      "id": "normalize-event",
+      "name": "Normalizar a SmarterOS Schema",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "smarter_events",
+        "columns": "metadata,payload,trust_score,timestamp,lifecycle",
+        "returnFields": "id",
+        "options": {}
+      },
+      "id": "postgres-insert",
+      "name": "Guardar en PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [650, 300],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-smarteros",
+          "name": "supabase-smarteros"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/mcp-decision",
+        "options": {
+          "bodyContentType": "raw",
+          "rawContentType": "application/json"
+        },
+        "body": "={{ JSON.stringify($json) }}"
+      },
+      "id": "trigger-mcp",
+      "name": "Enviar a MCP Decision Engine",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"event_id\": \"={{ $json.id }}\",\n  \"correlation_id\": \"={{ $json.correlation_id }}\",\n  \"message\": \"Evento ingerido y procesado\"\n}",
+        "options": {}
+      },
+      "id": "response-ok",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Ingesta": {
+      "main": [
+        [
+          {
+            "node": "Normalizar a SmarterOS Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar a SmarterOS Schema": {
+      "main": [
+        [
+          {
+            "node": "Guardar en PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Enviar a MCP Decision Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar a MCP Decision Engine": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "smarter-ingest-v1",
+  "meta": {
+    "instanceId": "smarteros-core"
+  },
+  "tags": [
+    {
+      "name": "smarteros"
+    },
+    {
+      "name": "ingesta"
+    }
+  ]
+}
