@@ -1,0 +1,16 @@
+version: 2
+# GitGuardian Configuration
+# https://dashboard.gitguardian.com/workspace/866485/settings
+# Scans repos for secrets before commit and in CI
+
+secret:
+  ignored_matches:
+    # Known test/example values — not real secrets
+    - match: "SmarterOS2026!"
+      name: "DB_PASSWORD example value"
+
+  excluded_paths:
+    - ".git/**"
+    - "venv/**"
+    - "node_modules/**"
+    - "**/*.log"

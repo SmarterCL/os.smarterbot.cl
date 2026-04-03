@@ -1,0 +1,28 @@
+# GitGuardian Configuration
+# https://dashboard.gitguardian.com/workspace/866485/settings
+
+# Minimum severity level to break CI
+show_secrets: true
+verbose: false
+exit_zero: false
+
+# Paths to ignore
+paths-ignore:
+  - ".git/"
+  - "venv/"
+  - "node_modules/"
+  - "*.lock"
+  - "*.log"
+
+# Paths to scan
+paths:
+  - "**/*.py"
+  - "**/*.yaml"
+  - "**/*.yml"
+  - "**/*.json"
+  - "**/*.md"
+  - "**/*.sh"
+  - "**/*.html"
+  - "**/*.js"
+  - "**/*.ts"
+  - "**/*.env*"
