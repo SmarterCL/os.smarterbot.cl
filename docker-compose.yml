@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: smarter
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-SmarterOS2026!}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: smarter_os
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -61,7 +61,7 @@ services:
       - ./config:/app/config
       - /var/lib/smarter:/var/lib/smarter
     environment:
-      - DATABASE_URL=postgresql://smarter:${DB_PASSWORD:-SmarterOS2026!}@postgres:5432/smarter_os
+      - DATABASE_URL=postgresql://smarter:${DB_PASSWORD}@postgres:5432/smarter_os
       - N8N_URL=http://smarter-n8n:5678
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
@@ -85,7 +85,7 @@ services:
       - /var/www/bolt-dashboard:/app
       - /var/lib/smarter:/var/lib/smarter:ro
     environment:
-      - DATABASE_URL=postgresql://smarter:${DB_PASSWORD:-SmarterOS2026!}@postgres:5432/smarter_os
+      - DATABASE_URL=postgresql://smarter:${DB_PASSWORD}@postgres:5432/smarter_os
     ports:
       - "8501:8501"
     command:
@@ -118,7 +118,7 @@ services:
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_DATABASE=smarter_os
       - DB_POSTGRESDB_USER=smarter
-      - DB_POSTGRESDB_PASSWORD=${DB_PASSWORD:-SmarterOS2026!}
+      - DB_POSTGRESDB_PASSWORD=${DB_PASSWORD}
     volumes:
       - n8n_data:/home/node/.n8n
     networks:
