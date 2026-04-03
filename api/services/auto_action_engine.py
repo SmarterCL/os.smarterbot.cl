@@ -21,11 +21,8 @@ import requests
 logger = logging.getLogger("smarter-food.auto-action")
 
 # ── CONFIG ───────────────────────────────────────────────────────
-TELEGRAM_BOT_TOKEN = os.getenv(
-    "TELEGRAM_BOT_TOKEN",
-    "${TELEGRAM_BOT_TOKEN}"
-)
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "6683244662")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 DECISIONS_LOG = Path("/var/log/smarter/decisions.log")
 DECISIONS_LOG.parent.mkdir(parents=True, exist_ok=True)

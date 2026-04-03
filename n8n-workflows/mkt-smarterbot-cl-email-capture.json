@@ -47,10 +47,10 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://rjfcmmzjlguiititkmyh.supabase.co/rest/v1/email_captures",
+        "url": "https://{{ $env.SUPABASE_PROJECT_ID }}.supabase.co/rest/v1/email_captures",
         "sendHeaders": {
-          "apikey": "${SUPABASE_SERVICE_KEY}",
-          "Authorization": "Bearer ${SUPABASE_SERVICE_KEY}",
+          "apikey": "={{ $env.SUPABASE_SERVICE_KEY }}",
+          "Authorization": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}",
           "Content-Type": "application/json",
           "Prefer": "return=representation"
         },
