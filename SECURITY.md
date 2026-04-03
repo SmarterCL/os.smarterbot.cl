@@ -4,6 +4,38 @@
 
 Report security issues via: smarterbotcl@gmail.com
 
+## GitGuardian Integration
+
+This project uses [GitGuardian](https://dashboard.gitguardian.com/workspace/866485/) 
+for automated secret detection.
+
+### Pre-commit Hook
+
+Every commit is scanned for secrets automatically:
+```bash
+# Install pre-commit hook
+cp .git/hooks/pre-commit .git/hooks/pre-commit.bak  # backup existing
+# Hook is auto-installed — runs ggshield on staged files
+```
+
+### CI Scan Script
+
+```bash
+# Scan any repository
+/usr/local/bin/scan-secrets.sh /path/to/repo
+
+# Scan specific repo
+scan-secrets.sh /root/os.smarterbot.cl
+scan-secrets.sh /root/bolt-os
+```
+
+### Manual Scan
+
+```bash
+export GITGUARDIAN_API_KEY=$(cat /opt/smarter-os/.env.gg)
+/var/www/smarter_latam/venv/bin/ggshield secret scan path . --recursive
+```
+
 ## Secrets Management
 
 All secrets must be stored as environment variables or GitHub Secrets.
@@ -20,11 +52,12 @@ Never commit actual tokens, keys, or passwords to this repository.
 | `DB_PASSWORD` | Database password |
 | `OPENAI_API_KEY` | OpenAI API key |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
+| `GITGUARDIAN_API_KEY` | GitGuardian API key |
 
 ### Pre-commit Secret Scan
 
 Before pushing, run:
 ```bash
-grep -rn "7631[0-9]*:AA\|eyJhbGciOi\|sk-\|ghp_" . --include="*.py" --include="*.json" --include="*.yaml" --include="*.yml" --include="*.md" --include="*.sh" | grep -v ".git/" | grep -v SECURITY.md
+/usr/local/bin/scan-secrets.sh
 ```
-If any results appear, remove the secret before committing.
+If any secrets are found, remove them before committing.
