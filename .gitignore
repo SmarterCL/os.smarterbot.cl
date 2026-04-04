@@ -50,7 +50,6 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-<<<<<<< Updated upstream
 # Logs
 *.log
 logs/
@@ -64,7 +63,7 @@ logs/
 *.bak
 *.backup
 *.tar.gz
-=======
+
 # Secrets (never commit)
 *.key
 *.pem
@@ -73,4 +72,6 @@ secrets/
 
 # Added by ggshield
 .cache_ggshield
->>>>>>> Stashed changes
+
+# Slide pages (never commit)
+page_*.html

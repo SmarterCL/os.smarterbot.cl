@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>SmarterOS — Sistema Operativo Comercial</title>
+    <meta name="description" content="Infraestructura que conecta datos físicos con dinero. Motor de coherencia MCP para operaciones automatizadas."/>
+    <link href="https://fonts.googleapis.com" rel="preconnect"/>
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+    <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;600;700&family=Afacad+Flux:wght@400;600&display=swap" rel="stylesheet"/>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet"/>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Afacad Flux', sans-serif;
+            color: #1a202c;
+            background: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        header { text-align: center; margin-bottom: 60px; }
+        header .logo-icon { font-size: 80px; color: #2b6cb0; margin-bottom: 20px; }
+        header h1 {
+            font-family: 'Comfortaa', cursive;
+            font-size: 48px; font-weight: 700; color: #2b6cb0; margin-bottom: 10px;
+        }
+        header p { font-size: 24px; color: #3182ce; font-weight: 400; }
+
+        .hero {
+            background: linear-gradient(135deg, #2b6cb0 0%, #3182ce 100%);
+            border-radius: 24px; padding: 60px 40px; text-align: center;
+            color: white; margin-bottom: 50px;
+            box-shadow: 0 15px 30px rgba(43, 108, 176, 0.3);
+        }
+        .hero h2 { font-family: 'Comfortaa', cursive; font-size: 36px; margin-bottom: 16px; }
+        .hero p { font-size: 20px; color: #bee3f8; max-width: 700px; margin: 0 auto 30px; line-height: 1.6; }
+        .hero .cta-btn {
+            display: inline-block; background: white; color: #2b6cb0;
+            padding: 16px 40px; border-radius: 50px; text-decoration: none;
+            font-weight: 700; font-size: 18px; transition: all 0.3s ease;
+        }
+        .hero .cta-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.2); }
+
+        .section-title {
+            font-family: 'Comfortaa', cursive; font-size: 32px;
+            color: #2b6cb0; text-align: center; margin-bottom: 40px;
+        }
+
+        .features-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 24px; margin-bottom: 50px;
+        }
+
+        .feature-card {
+            background: #ffffff; border-radius: 20px; padding: 30px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s ease; border-left: 6px solid #bee3f8;
+            position: relative; overflow: hidden;
+        }
+        .feature-card::before {
+            content: ''; position: absolute; top: 0; right: 0;
+            width: 100px; height: 100px; background: #f7fafc;
+            border-radius: 50%; transform: translate(30%, -30%); z-index: 0;
+        }
+        .feature-card:hover {
+            transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12);
+            border-left-color: #3182ce;
+        }
+        .feature-card > * { position: relative; z-index: 1; }
+        .feature-card .card-icon { font-size: 36px; color: #3182ce; margin-bottom: 16px; }
+        .feature-card h3 {
+            font-family: 'Comfortaa', cursive; font-size: 22px;
+            font-weight: 600; color: #2d3748; margin-bottom: 12px;
+        }
+        .feature-card p { font-size: 16px; color: #4a5568; line-height: 1.5; }
+
+        .arch-section {
+            background: white; border-radius: 24px; padding: 50px;
+            margin-bottom: 50px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        .arch-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; }
+        .arch-layer {
+            text-align: center; padding: 30px; background: #f7fafc;
+            border-radius: 16px; border-bottom: 6px solid #bee3f8;
+        }
+        .arch-layer:nth-child(1) { border-color: #4299e1; }
+        .arch-layer:nth-child(2) { border-color: #3182ce; }
+        .arch-layer:nth-child(3) { border-color: #2b6cb0; }
+        .arch-layer .layer-icon { font-size: 48px; color: #3182ce; margin-bottom: 16px; }
+        .arch-layer h4 { font-family: 'Comfortaa', cursive; font-size: 20px; color: #2d3748; margin-bottom: 10px; }
+        .arch-layer p { font-size: 15px; color: #4a5568; line-height: 1.5; }
+
+        .use-cases { margin-bottom: 50px; }
+        .use-case-row {
+            display: flex; gap: 24px; margin-bottom: 20px;
+        }
+        .use-case {
+            flex: 1; background: white; border-radius: 16px; padding: 24px;
+            display: flex; align-items: center; gap: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        .use-case .uc-icon {
+            width: 60px; height: 60px; border-radius: 50%;
+            background: #ebf4ff; display: flex; align-items: center;
+            justify-content: center; font-size: 28px; color: #3182ce; flex-shrink: 0;
+        }
+        .use-case h4 { font-size: 18px; color: #2d3748; margin-bottom: 6px; }
+        .use-case p { font-size: 14px; color: #718096; }
+
+        .footer-cta {
+            background: linear-gradient(135deg, #2b6cb0 0%, #3182ce 100%);
+            border-radius: 24px; padding: 50px; text-align: center; color: white;
+            margin-bottom: 50px;
+        }
+        .footer-cta h2 { font-family: 'Comfortaa', cursive; font-size: 32px; margin-bottom: 16px; }
+        .footer-cta p { font-size: 18px; color: #bee3f8; margin-bottom: 24px; }
+
+        footer {
+            text-align: center; padding: 30px 20px;
+            color: #718096; font-size: 14px;
+            border-top: 1px solid #e2e8f0;
+        }
+        footer a { color: #3182ce; text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
+
+        @media (max-width: 768px) {
+            header h1 { font-size: 32px; }
+            header p { font-size: 18px; }
+            .hero h2 { font-size: 28px; }
+            .hero { padding: 40px 20px; }
+            .arch-grid { grid-template-columns: 1fr; }
+            .use-case-row { flex-direction: column; }
+            .features-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo-icon"><i class="fa-solid fa-microchip"></i></div>
+            <h1>SmarterOS</h1>
+            <p>Sistema Operativo Comercial</p>
+        </header>
+
+        <section class="hero">
+            <h2>Infraestructura que conecta datos físicos con dinero</h2>
+            <p>Transformamos operaciones físicas en flujos financieros automatizados. GPS, básculas y sensores se convierten en contabilidad verificable y pagos reales sin intervención humana.</p>
+            <a href="https://os.smarterbot.cl/api/docs" class="cta-btn"><i class="fa-solid fa-code"></i>&nbsp; Explorar API</a>
+        </section>
+
+        <h2 class="section-title">¿Por qué SmarterOS?</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="card-icon"><i class="fa-solid fa-puzzle-piece"></i></div>
+                <h3>El Problema: Datos Aislados</h3>
+                <p>Básculas, GPS y reportes manuales operan como datos aislados. Sistemas ciegos ante el fraude y falta de cruce de información real.</p>
+            </div>
+            <div class="feature-card">
+                <div class="card-icon"><i class="fa-solid fa-shuffle"></i></div>
+                <h3>Motor de Coherencia</h3>
+                <p>Cruce automático de GPS + Peso + Tiempo + Evento. La realidad física se vuelve verificable con reglas de validación MCP.</p>
+            </div>
+            <div class="feature-card">
+                <div class="card-icon"><i class="fa-solid fa-money-bill-trend-up"></i></div>
+                <h3>De lo Físico a lo Financiero</h3>
+                <p>Evento capturado → Validación MCP → Registro contable automático → Activación de flujo de dinero real.</p>
+            </div>
+            <div class="feature-card">
+                <div class="card-icon"><i class="fa-solid fa-diagram-project"></i></div>
+                <h3>Correlación, no solo Registro</h3>
+                <p>Otros registran datos. Nosotros correlacionamos en tiempo real: camiones, básculas y bancos conectados.</p>
+            </div>
+            <div class="feature-card">
+                <div class="card-icon"><i class="fa-solid fa-shield-check"></i></div>
+                <h3>100% Verdad Operativa</h3>
+                <p>Transformamos incertidumbre en datos verificables. La contabilidad nace del mundo físico, eliminando fraude y burocracia.</p>
+            </div>
+            <div class="feature-card">
+                <div class="card-icon"><i class="fa-solid fa-recycle"></i></div>
+                <h3>Trazabilidad Ley REP</h3>
+                <p>Captura → Cruce → Reporte → Pago. Cumplimiento normativo automatizado para residuos y reciclaje.</p>
+            </div>
+        </div>
+
+        <h2 class="section-title">Arquitectura MCP</h2>
+        <div class="arch-section">
+            <div class="arch-grid">
+                <div class="arch-layer">
+                    <div class="layer-icon"><i class="fa-solid fa-satellite-dish"></i></div>
+                    <h4>Capa Física</h4>
+                    <p>GPS, Básculas, Sensores IoT y Edge Computing capturan datos del mundo real.</p>
+                </div>
+                <div class="arch-layer">
+                    <div class="layer-icon"><i class="fa-solid fa-brain"></i></div>
+                    <h4>Lógica MCP</h4>
+                    <p>Reglas de validación, cruce de datos y detección de anomalías con IA.</p>
+                </div>
+                <div class="arch-layer">
+                    <div class="layer-icon"><i class="fa-solid fa-wallet"></i></div>
+                    <h4>Motor Contable</h4>
+                    <p>Pagos automatizados, Wallet digital e integración con Odoo ERP.</p>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="section-title">Casos de Uso</h2>
+        <div class="use-cases">
+            <div class="use-case-row">
+                <div class="use-case">
+                    <div class="uc-icon"><i class="fa-solid fa-truck-fast"></i></div>
+                    <div>
+                        <h4>Flota y Logística</h4>
+                        <p>Control antifraude y eficiencia operativa real en transporte de residuos.</p>
+                    </div>
+                </div>
+                <div class="use-case">
+                    <div class="uc-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                    <div>
+                        <h4>EcoCupon</h4>
+                        <p>Reciclaje validado con cashback automático para ciudadanos.</p>
+                    </div>
+                </div>
+                <div class="use-case">
+                    <div class="uc-icon"><i class="fa-solid fa-city"></i></div>
+                    <div>
+                        <h4>Municipios</h4>
+                        <p>Trazabilidad total para cumplimiento Ley REP y reportes regulatorios.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-cta">
+            <h2>El Futuro es Coherente</h2>
+            <p>Transformemos sus operaciones físicas en dinero automatizado.</p>
+            <a href="mailto:smarterbotcl@gmail.com" class="cta-btn" style="background:white;color:#2b6cb0;padding:16px 40px;border-radius:50px;text-decoration:none;font-weight:700;font-size:18px;">
+                <i class="fa-solid fa-envelope"></i>&nbsp; Contáctanos
+            </a>
+        </div>
+
+        <footer>
+            <p>SmarterOS &copy; 2026 — <a href="https://github.com/SmarterCL/os.smarterbot.cl">GitHub</a> | <a href="https://os.smarterbot.cl/api/docs">API Docs</a></p>
+            <p style="margin-top:8px;font-size:12px;color:#a0aec0;">Powered by MCP Engine · Supabase · n8n · Odoo · Chatwoot</p>
+        </footer>
+    </div>
+</body>
+</html>
