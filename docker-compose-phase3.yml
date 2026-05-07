@@ -1,0 +1,251 @@
+version: '3.8'
+
+services:
+  # Android Emulator as a containerized node
+  android-node:
+    image: halimqarroum/docker-android:api-33
+    container_name: smarteros-android-node
+    hostname: android-node
+    
+    # KVM and hardware access
+    devices:
+      - /dev/kvm:/dev/kvm
+    
+    # Ports
+    ports:
+      # ADB Server
+      - "5555:5555"
+      # WebRTC (optional, for streaming)
+      - "7080:7080"
+    
+    # Resources
+    mem_limit: 4g
+    memswap_limit: 4g
+    cpus: "2"
+    
+    # Environment
+    environment:
+      # Emulator settings
+      - API_LEVEL=33
+      - IMG_TYPE=google_apis_playstore
+      - ARCHITECTURE=x86_64
+      - MEMORY=4096
+      - CORES=2
+      - DISABLE_ANIMATION=true
+      - DISABLE_HIDDEN_POLICY=true
+      - SKIP_AUTH=true
+      
+      # SmarterOS settings
+      - CLAW_NODE=android
+      - CLUSTER_MODE=containerized
+    
+    # Volumes
+    volumes:
+      # Persist AVD data
+      - android_avd:/data
+      # Mount cluster scripts
+      - ./smarteros-cluster:/smarteros:ro
+      # Mount mesh network
+      - ./smarteros-mesh:/smarteros-mesh:ro
+    
+    # Network
+    networks:
+      - smarteros-net
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "adb", "shell", "getprop", "sys.boot_completed"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    
+    # Dependencies
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    
+    # Command to run SmarterOS cluster agent inside container
+    entrypoint: |
+      /bin/bash -c '
+      set -e
+      
+      # Start emulator in background
+      emulator -avd android \
+        -memory ${MEMORY} \
+        -cores ${CORES} \
+        -no-metrics -no-audio -partition-size=8192 \
+        -qemu -m ${MEMORY} -smp ${CORES} &
+      
+      EMULATOR_PID=$!
+      
+      # Wait for boot
+      echo "[android] Waiting for emulator to boot..."
+      while ! adb shell getprop sys.boot_completed 2>/dev/null | grep -q 1; do
+        sleep 2
+      done
+      
+      echo "[android] ✓ Emulator ready"
+      
+      # Start ADB daemon
+      adb start-server
+      
+      # Run cluster heartbeat (if scripts mounted)
+      if [ -f /smarteros/smarteros-final.sh ]; then
+        echo "[android] Starting cluster heartbeat..."
+        export CLAW_NODE=android
+        bash /smarteros/smarteros-final.sh start &
+      fi
+      
+      # Keep emulator running
+      wait $EMULATOR_PID
+      '
+    
+    restart: unless-stopped
+
+  # PostgreSQL (shared)
+  postgres:
+    image: postgres:16-alpine
+    container_name: smarteros-postgres
+    hostname: postgres
+    
+    environment:
+      POSTGRES_DB: smarteros
+      POSTGRES_USER: smarteros
+      POSTGRES_PASSWORD: smarteros
+    
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    
+    networks:
+      - smarteros-net
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smarteros"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
+    ports:
+      - "5432:5432"
+    
+    restart: unless-stopped
+
+  # Neo4j (shared)
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: smarteros-neo4j
+    hostname: neo4j
+    
+    environment:
+      NEO4J_AUTH: neo4j/smarteros
+      NEO4J_PLUGINS: '["apoc"]'
+    
+    volumes:
+      - neo4j_data:/var/lib/neo4j/data
+    
+    networks:
+      - smarteros-net
+    
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p smarteros 'RETURN 1' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    
+    restart: unless-stopped
+
+  # Redis (shared)
+  redis:
+    image: redis:7-alpine
+    container_name: smarteros-redis
+    hostname: redis
+    
+    networks:
+      - smarteros-net
+    
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    
+    ports:
+      - "6379:6379"
+    
+    restart: unless-stopped
+
+  # Prometheus (monitoring)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: smarteros-prometheus
+    hostname: prometheus
+    
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    
+    networks:
+      - smarteros-net
+    
+    ports:
+      - "9090:9090"
+    
+    restart: unless-stopped
+
+  # Grafana (dashboards)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: smarteros-grafana
+    hostname: grafana
+    
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: smarteros
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    
+    volumes:
+      - grafana_data:/var/lib/grafana
+    
+    networks:
+      - smarteros-net
+    
+    depends_on:
+      - prometheus
+    
+    ports:
+      - "3000:3000"
+    
+    restart: unless-stopped
+
+networks:
+  smarteros-net:
+    driver: bridge
+
+volumes:
+  android_avd:
+    driver: local
+  postgres_data:
+    driver: local
+  neo4j_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
